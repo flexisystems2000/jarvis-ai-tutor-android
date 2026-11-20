@@ -1,8 +1,11 @@
+
 package com.flexi.jarvis.data.repository
 
+import android.util.Patterns
+import com.flexi.jarvis.data.repository.*
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.providers.OtpType
+import io.github.jan.supabase.auth.OtpType
 
 class PasswordRecoveryRepository(
     private val supabase: SupabaseClient
@@ -16,9 +19,7 @@ class PasswordRecoveryRepository(
                 "Enter your email address."
             }
 
-            require(android.util.Patterns.EMAIL_ADDRESS
-                .matcher(cleanEmail)
-                .matches()) {
+            require(Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
                 "Enter a valid email address."
             }
 
@@ -31,7 +32,6 @@ class PasswordRecoveryRepository(
         email: String,
         code: String
     ): Result<Unit> = runCatching {
-
         val cleanEmail = email.trim()
         val cleanCode = code.trim()
 
@@ -43,30 +43,29 @@ class PasswordRecoveryRepository(
             "Enter the recovery code sent to your email."
         }
 
+        require(cleanCode.length == 6 && cleanCode.all { it.isDigit() }) {
+            "Enter the complete 6-digit recovery code."
+        }
+
         supabase.auth.verifyEmailOtp(
             type = OtpType.Email.RECOVERY,
             email = cleanEmail,
             token = cleanCode
         )
 
-        requireNotNull(
-            supabase.auth.currentAccessTokenOrNull()
-        ) {
-            "Supabase accepted the code, but could not establish a recovery session. Please request another code."
+        requireNotNull(supabase.auth.currentAccessTokenOrNull()) {
+            "The code was accepted, but a recovery session could not be established. Please request another code."
         }
     }
 
     suspend fun updatePassword(
         newPassword: String
     ): Result<Unit> = runCatching {
-
         require(newPassword.length >= 8) {
             "Your new password must contain at least 8 characters."
         }
 
-        requireNotNull(
-            supabase.auth.currentUserOrNull()
-        ) {
+        requireNotNull(supabase.auth.currentUserOrNull()) {
             "Your recovery session has expired. Please request another recovery code."
         }
 
@@ -74,8 +73,6 @@ class PasswordRecoveryRepository(
             password = newPassword
         }
 
-        // End the temporary recovery session.
-        // The user returns to the normal sign-in screen.
         supabase.auth.signOut()
     }
 }
