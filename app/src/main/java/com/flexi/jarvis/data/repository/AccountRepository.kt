@@ -1,3 +1,4 @@
+
 package com.flexi.jarvis.data.repository
 
 import com.flexi.jarvis.data.model.Account
@@ -9,16 +10,33 @@ import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.providers.builtin.Email
 
 interface AccountRepository {
+
     suspend fun currentAccount(): Account?
-    suspend fun signInWithEmail(email: String, password: String): Result<Account>
+
+    suspend fun signInWithEmail(
+        email: String,
+        password: String
+    ): Result<Account>
+
     suspend fun signUpWithEmail(
         email: String,
         password: String,
         name: String
     ): Result<Account>
-    suspend fun sendPasswordReset(email: String): Result<Unit>
-    suspend fun signInWithGoogle(idToken: String): Result<Account>
-    suspend fun linkFlexiMasterclassAccount(token: String): Result<Account>
+
+    suspend fun sendPasswordReset(
+        email: String
+    ): Result<Unit>
+
+    suspend fun signInWithGoogle(
+        idToken: String,
+        nonce: String
+    ): Result<Account>
+
+    suspend fun linkFlexiMasterclassAccount(
+        token: String
+    ): Result<Account>
+
     suspend fun signOut()
 }
 
@@ -27,11 +45,14 @@ class SupabaseAccountRepository(
 ) : AccountRepository {
 
     override suspend fun currentAccount(): Account? {
-        val user = supabase.auth.currentUserOrNull() ?: return null
+        val user = supabase.auth.currentUserOrNull()
+            ?: return null
 
         return Account(
             id = user.id,
-            displayName = user.email?.substringBefore("@") ?: "Student",
+            displayName = user.email
+                ?.substringBefore("@")
+                ?: "Student",
             email = user.email,
             type = AccountType.FREE,
             isFlexiMasterclassLinked = false
@@ -42,6 +63,7 @@ class SupabaseAccountRepository(
         email: String,
         password: String
     ): Result<Account> = runCatching {
+
         supabase.auth.signInWith(Email) {
             this.email = email.trim()
             this.password = password
@@ -57,7 +79,11 @@ class SupabaseAccountRepository(
         password: String,
         name: String
     ): Result<Account> = runCatching {
-        require(name.isNotBlank()) { "Enter your full name." }
+
+        require(name.isNotBlank()) {
+            "Enter your full name."
+        }
+
         require(password.length >= 8) {
             "Your password must contain at least 8 characters."
         }
@@ -78,19 +104,27 @@ class SupabaseAccountRepository(
     override suspend fun sendPasswordReset(
         email: String
     ): Result<Unit> = runCatching {
+
         supabase.auth.resetPasswordForEmail(email.trim())
     }
 
     override suspend fun signInWithGoogle(
-        idToken: String
+        idToken: String,
+        nonce: String
     ): Result<Account> = runCatching {
+
         require(idToken.isNotBlank()) {
             "Google did not return an ID token."
+        }
+
+        require(nonce.isNotBlank()) {
+            "Google sign-in nonce is missing."
         }
 
         supabase.auth.signInWith(IDToken) {
             this.idToken = idToken
             provider = Google
+            this.nonce = nonce
         }
 
         requireNotNull(currentAccount()) {
@@ -101,6 +135,7 @@ class SupabaseAccountRepository(
     override suspend fun linkFlexiMasterclassAccount(
         token: String
     ): Result<Account> {
+
         return Result.failure(
             IllegalStateException(
                 "Flexi Masterclass verification is waiting for the secure " +
