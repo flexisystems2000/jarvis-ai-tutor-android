@@ -1,4 +1,3 @@
-
 package com.flexi.jarvis.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -25,12 +25,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.flexi.jarvis.JarvisApplication
 import com.flexi.jarvis.data.model.Account
 import com.flexi.jarvis.data.model.AccountType
+import com.flexi.jarvis.data.repository.PasswordRecoveryRepository
+import kotlinx.coroutines.launch
 
 @Composable
 fun AccountScreen(
@@ -45,315 +47,800 @@ fun AccountScreen(
     onVerifyMasterclass: (String) -> Unit,
     onGoToSignIn: () -> Unit
 ) {
-    var isRegistering by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var whatsappNumber by remember { mutableStateOf("") }
+    var isRegistering by remember {
+        mutableStateOf(false)
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "JARVIS Account",
-            style = MaterialTheme.typography.headlineSmall
+    var name by remember {
+        mutableStateOf("")
+    }
+
+    var email by remember {
+        mutableStateOf("")
+    }
+
+    var password by remember {
+        mutableStateOf("")
+    }
+
+    var passwordVisible by remember {
+        mutableStateOf(false)
+    }
+
+    var whatsappNumber by remember {
+        mutableStateOf("")
+    }
+
+    // Dedicated password recovery screen state.
+    var showRecoveryScreen by remember {
+        mutableStateOf(false)
+    }
+
+    var recoveryStep by remember {
+        mutableIntStateOf(1)
+    }
+
+    var recoveryEmail by remember {
+        mutableStateOf("")
+    }
+
+    var recoveryCode by remember {
+        mutableStateOf("")
+    }
+
+    var newPassword by remember {
+        mutableStateOf("")
+    }
+
+    var confirmNewPassword by remember {
+        mutableStateOf("")
+    }
+
+    var recoveryPasswordVisible by remember {
+        mutableStateOf(false)
+    }
+
+    var confirmPasswordVisible by remember {
+        mutableStateOf(false)
+    }
+
+    var recoveryBusy by remember {
+        mutableStateOf(false)
+    }
+
+    var recoveryMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var recoveryError by remember {
+        mutableStateOf(false)
+    }
+
+    val recoveryRepository = remember {
+        PasswordRecoveryRepository(
+            JarvisApplication.supabase
         )
+    }
 
-        Text(
-            text = "Your account keeps your learning experience connected.",
-            style = MaterialTheme.typography.bodyMedium
-        )
+    val scope = rememberCoroutineScope()
 
-        HorizontalDivider()
+    fun startRecovery() {
+        recoveryEmail = ""
+        recoveryCode = ""
+        newPassword = ""
+        confirmNewPassword = ""
+        recoveryStep = 1
+        recoveryMessage = null
+        recoveryError = false
+        showRecoveryScreen = true
+    }
 
-        if (account != null) {
+    fun returnToSignIn() {
+        showRecoveryScreen = false
+        recoveryStep = 1
+        recoveryEmail = ""
+        recoveryCode = ""
+        newPassword = ""
+        confirmNewPassword = ""
+        recoveryMessage = null
+        recoveryError = false
+        password = ""
+        passwordVisible = false
+        onGoToSignIn()
+    }
 
-            if (account.id == "pending-email-verification") {
+    if (showRecoveryScreen) {
 
-                Text(
-                    text = "Registration submitted",
-                    style = MaterialTheme.typography.titleLarge
-                )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
 
-                Text(
-                    text = "A verification email has been requested for ${account.email.orEmpty()}. " +
-                        "Check your inbox before attempting to sign in."
-                )
+            Text(
+                text = "Reset your password",
+                style = MaterialTheme.typography.headlineSmall
+            )
 
-                OutlinedButton(
-                    onClick = {
-                        isRegistering = false
-                        password = ""
-                        passwordVisible = false
-                        onGoToSignIn()
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Go to sign in")
-                }
+            Text(
+                text = "Recover access to your JARVIS account securely.",
+                style = MaterialTheme.typography.bodyMedium
+            )
 
-            } else {
+            HorizontalDivider()
 
-                Text(
-                    text = "Welcome, ${account.displayName}",
-                    style = MaterialTheme.typography.titleLarge
-                )
+            Text(
+                text = when (recoveryStep) {
+                    1 -> "Step 1 of 3 — Your email"
+                    2 -> "Step 2 of 3 — Verify your code"
+                    3 -> "Step 3 of 3 — New password"
+                    else -> "Password updated"
+                },
+                style = MaterialTheme.typography.titleLarge
+            )
 
-                Text(
-                    text = account.email.orEmpty(),
-                    style = MaterialTheme.typography.bodyMedium
-                )
+            when (recoveryStep) {
 
-                Text(
-                    text = "Account plan: ${account.type.displayName()}",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Button(
-                    onClick = onSignOut,
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Sign out")
-                }
-
-                HorizontalDivider()
-
-                Text(
-                    text = "Flexi Masterclass",
-                    style = MaterialTheme.typography.titleLarge
-                )
-
-                if (account.isFlexiMasterclassLinked) {
+                1 -> {
 
                     Text(
-                        text = "Your existing Flexi Masterclass account is verified."
-                    )
-
-                } else {
-
-                    Text(
-                        text = "Already registered on Flexi Lessons? " +
-                            "Verify your existing registration here."
-                    )
-
-                    Text(
-                        text = "Use the same WhatsApp number you provided " +
-                            "when registering on Flexi Lessons. Your JARVIS " +
-                            "sign-in email will be checked automatically.",
-                        style = MaterialTheme.typography.bodySmall
+                        text = "Enter the email address associated with your JARVIS account. We'll send a password recovery code to that address."
                     )
 
                     OutlinedTextField(
-                        value = whatsappNumber,
+                        value = recoveryEmail,
                         onValueChange = {
-                            whatsappNumber = it
+                            recoveryEmail = it
                         },
                         label = {
-                            Text("Flexi Lessons WhatsApp number")
-                        },
-                        placeholder = {
-                            Text("+2348012345678")
+                            Text("Email address")
                         },
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Phone
+                            keyboardType = KeyboardType.Email
                         ),
                         singleLine = true,
-                        enabled = !busy,
+                        enabled = !recoveryBusy,
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     Button(
                         onClick = {
-                            onVerifyMasterclass(
-                                whatsappNumber.trim()
-                            )
+                            scope.launch {
+                                recoveryBusy = true
+                                recoveryMessage = null
+                                recoveryError = false
+
+                                recoveryRepository
+                                    .sendRecoveryCode(recoveryEmail)
+                                    .onSuccess {
+                                        recoveryStep = 2
+                                        recoveryMessage =
+                                            "If the account exists, a recovery code has been sent. Check your inbox and spam folder."
+                                    }
+                                    .onFailure {
+                                        recoveryError = true
+                                        recoveryMessage =
+                                            it.message
+                                                ?: "We couldn't send the recovery email."
+                                    }
+
+                                recoveryBusy = false
+                            }
                         },
-                        enabled = !busy &&
-                            whatsappNumber.isNotBlank(),
+                        enabled = !recoveryBusy &&
+                            recoveryEmail.isNotBlank(),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Verify Flexi Masterclass")
+                        Text("Send recovery code")
                     }
+                }
+
+                2 -> {
 
                     Text(
-                        text = "Only an existing registration with verified " +
-                            "payment and an active subscription can qualify. " +
-                            "No new Masterclass account is created.",
-                        style = MaterialTheme.typography.bodySmall
+                        text = "Enter the recovery code sent to:"
                     )
+
+                    Text(
+                        text = recoveryEmail,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    OutlinedTextField(
+                        value = recoveryCode,
+                        onValueChange = {
+                            recoveryCode = it.filter { char ->
+                                char.isDigit()
+                            }.take(8)
+                        },
+                        label = {
+                            Text("Recovery code")
+                        },
+                        placeholder = {
+                            Text("Enter the code from your email")
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                        singleLine = true,
+                        enabled = !recoveryBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                recoveryBusy = true
+                                recoveryMessage = null
+                                recoveryError = false
+
+                                recoveryRepository
+                                    .verifyRecoveryCode(
+                                        recoveryEmail,
+                                        recoveryCode
+                                    )
+                                    .onSuccess {
+                                        recoveryStep = 3
+                                        recoveryMessage =
+                                            "Your recovery code has been verified. You can now create a new password."
+                                    }
+                                    .onFailure {
+                                        recoveryError = true
+                                        recoveryMessage =
+                                            it.message
+                                                ?: "The recovery code could not be verified."
+                                    }
+
+                                recoveryBusy = false
+                            }
+                        },
+                        enabled = !recoveryBusy &&
+                            recoveryCode.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Verify recovery code")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                recoveryBusy = true
+                                recoveryMessage = null
+                                recoveryError = false
+
+                                recoveryRepository
+                                    .sendRecoveryCode(recoveryEmail)
+                                    .onSuccess {
+                                        recoveryMessage =
+                                            "A new recovery email has been requested. Check your inbox."
+                                    }
+                                    .onFailure {
+                                        recoveryError = true
+                                        recoveryMessage =
+                                            it.message
+                                                ?: "Unable to resend the recovery code."
+                                    }
+
+                                recoveryBusy = false
+                            }
+                        },
+                        enabled = !recoveryBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Resend code")
+                    }
+                }
+
+                3 -> {
+
+                    Text(
+                        text = "Create a new password for your JARVIS account. Use at least 8 characters."
+                    )
+
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = {
+                            newPassword = it
+                        },
+                        label = {
+                            Text("New password")
+                        },
+                        visualTransformation =
+                            if (recoveryPasswordVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    recoveryPasswordVisible =
+                                        !recoveryPasswordVisible
+                                }
+                            ) {
+                                Icon(
+                                    imageVector =
+                                        if (recoveryPasswordVisible) {
+                                            Icons.Filled.VisibilityOff
+                                        } else {
+                                            Icons.Filled.Visibility
+                                        },
+                                    contentDescription =
+                                        if (recoveryPasswordVisible) {
+                                            "Hide password"
+                                        } else {
+                                            "Show password"
+                                        }
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        enabled = !recoveryBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = confirmNewPassword,
+                        onValueChange = {
+                            confirmNewPassword = it
+                        },
+                        label = {
+                            Text("Confirm new password")
+                        },
+                        visualTransformation =
+                            if (confirmPasswordVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    confirmPasswordVisible =
+                                        !confirmPasswordVisible
+                                }
+                            ) {
+                                Icon(
+                                    imageVector =
+                                        if (confirmPasswordVisible) {
+                                            Icons.Filled.VisibilityOff
+                                        } else {
+                                            Icons.Filled.Visibility
+                                        },
+                                    contentDescription =
+                                        if (confirmPasswordVisible) {
+                                            "Hide password"
+                                        } else {
+                                            "Show password"
+                                        }
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        enabled = !recoveryBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            when {
+                                newPassword.length < 8 -> {
+                                    recoveryError = true
+                                    recoveryMessage =
+                                        "Your password must contain at least 8 characters."
+                                }
+
+                                newPassword != confirmNewPassword -> {
+                                    recoveryError = true
+                                    recoveryMessage =
+                                        "The passwords do not match."
+                                }
+
+                                else -> {
+                                    scope.launch {
+                                        recoveryBusy = true
+                                        recoveryMessage = null
+                                        recoveryError = false
+
+                                        recoveryRepository
+                                            .updatePassword(newPassword)
+                                            .onSuccess {
+                                                recoveryStep = 4
+                                                newPassword = ""
+                                                confirmNewPassword = ""
+                                                recoveryMessage =
+                                                    "Your password has been changed successfully. You can now sign in with your new password."
+                                            }
+                                            .onFailure {
+                                                recoveryError = true
+                                                recoveryMessage =
+                                                    it.message
+                                                        ?: "Unable to update your password."
+                                            }
+
+                                        recoveryBusy = false
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !recoveryBusy &&
+                            newPassword.isNotBlank() &&
+                            confirmNewPassword.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Save new password")
+                    }
+                }
+
+                4 -> {
+
+                    Text(
+                        text = "Your JARVIS password has been updated. Your recovery session has been closed."
+                    )
+
+                    Button(
+                        onClick = {
+                            returnToSignIn()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Return to sign in")
+                    }
                 }
             }
 
-        } else {
+            if (recoveryBusy) {
+                CircularProgressIndicator()
+            }
+
+            if (!recoveryMessage.isNullOrBlank()) {
+                Text(
+                    text = recoveryMessage!!,
+                    color = if (recoveryError) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            if (recoveryStep != 4) {
+                Spacer(Modifier.height(4.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        returnToSignIn()
+                    },
+                    enabled = !recoveryBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Back to sign in")
+                }
+            }
+        }
+
+    } else {
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
 
             Text(
-                text = if (isRegistering) {
-                    "Create your JARVIS account"
-                } else {
-                    "Sign in to JARVIS"
-                },
-                style = MaterialTheme.typography.titleLarge
+                text = "JARVIS Account",
+                style = MaterialTheme.typography.headlineSmall
             )
 
-            if (isRegistering) {
+            Text(
+                text = "Your account keeps your learning experience connected.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            HorizontalDivider()
+
+            if (account != null) {
+
+                if (account.id == "pending-email-verification") {
+
+                    Text(
+                        text = "Registration submitted",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+
+                    Text(
+                        text = "A verification email has been requested for ${account.email.orEmpty()}. Check your inbox before attempting to sign in."
+                    )
+
+                    OutlinedButton(
+                        onClick = {
+                            isRegistering = false
+                            password = ""
+                            passwordVisible = false
+                            onGoToSignIn()
+                        },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Go to sign in")
+                    }
+
+                } else {
+
+                    Text(
+                        text = "Welcome, ${account.displayName}",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+
+                    Text(
+                        text = account.email.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Text(
+                        text = "Account plan: ${account.type.displayName()}",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Button(
+                        onClick = onSignOut,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Sign out")
+                    }
+
+                    HorizontalDivider()
+
+                    Text(
+                        text = "Flexi Masterclass",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+
+                    if (account.isFlexiMasterclassLinked) {
+
+                        Text(
+                            text = "Your existing Flexi Masterclass account is verified."
+                        )
+
+                    } else {
+
+                        Text(
+                            text = "Already registered on Flexi Lessons? Verify your existing registration here."
+                        )
+
+                        Text(
+                            text = "Use the same WhatsApp number you provided when registering on Flexi Lessons. Your JARVIS sign-in email will be checked automatically.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        OutlinedTextField(
+                            value = whatsappNumber,
+                            onValueChange = {
+                                whatsappNumber = it
+                            },
+                            label = {
+                                Text("Flexi Lessons WhatsApp number")
+                            },
+                            placeholder = {
+                                Text("+2348012345678")
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Phone
+                            ),
+                            singleLine = true,
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Button(
+                            onClick = {
+                                onVerifyMasterclass(
+                                    whatsappNumber.trim()
+                                )
+                            },
+                            enabled = !busy &&
+                                whatsappNumber.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Verify Flexi Masterclass")
+                        }
+
+                        Text(
+                            text = "Only an existing registration with verified payment and an active subscription can qualify. No new Masterclass account is created.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+            } else {
+
+                Text(
+                    text = if (isRegistering) {
+                        "Create your JARVIS account"
+                    } else {
+                        "Sign in to JARVIS"
+                    },
+                    style = MaterialTheme.typography.titleLarge
+                )
+
+                if (isRegistering) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = {
+                            name = it
+                        },
+                        label = {
+                            Text("Full name")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !busy
+                    )
+                }
+
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Full name") },
+                    value = email,
+                    onValueChange = {
+                        email = it
+                    },
+                    label = {
+                        Text("Email address")
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !busy
                 )
-            }
 
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("Email address") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !busy
-            )
-
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                visualTransformation = if (passwordVisible) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                trailingIcon = {
-                    IconButton(
-                        onClick = {
-                            passwordVisible = !passwordVisible
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = {
+                        password = it
+                    },
+                    label = {
+                        Text("Password")
+                    },
+                    visualTransformation =
+                        if (passwordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
                         },
-                        enabled = !busy
-                    ) {
-                        Icon(
-                            imageVector = if (passwordVisible) {
-                                Icons.Filled.VisibilityOff
-                            } else {
-                                Icons.Filled.Visibility
+                    trailingIcon = {
+                        IconButton(
+                            onClick = {
+                                passwordVisible = !passwordVisible
                             },
-                            contentDescription = if (passwordVisible) {
-                                "Hide password"
-                            } else {
-                                "Show password"
-                            }
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !busy
-            )
+                            enabled = !busy
+                        ) {
+                            Icon(
+                                imageVector =
+                                    if (passwordVisible) {
+                                        Icons.Filled.VisibilityOff
+                                    } else {
+                                        Icons.Filled.Visibility
+                                    },
+                                contentDescription =
+                                    if (passwordVisible) {
+                                        "Hide password"
+                                    } else {
+                                        "Show password"
+                                    }
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !busy
+                )
 
-            if (isRegistering) {
+                if (isRegistering) {
+                    Text(
+                        text = "Password must contain at least 8 characters.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        if (isRegistering) {
+                            onEmailSignUp(
+                                name.trim(),
+                                email.trim(),
+                                password
+                            )
+                        } else {
+                            onEmailSignIn(
+                                email.trim(),
+                                password
+                            )
+                        }
+                    },
+                    enabled = !busy &&
+                        email.isNotBlank() &&
+                        password.isNotBlank() &&
+                        (!isRegistering ||
+                            (name.isNotBlank() &&
+                                password.length >= 8)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (isRegistering) {
+                            "Create account"
+                        } else {
+                            "Sign in"
+                        }
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onGoogleSignIn,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Continue with Google")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        startRecovery()
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Forgot password?")
+                }
+
+                Spacer(Modifier.height(8.dp))
+
                 Text(
-                    text = "Password must contain at least 8 characters.",
-                    style = MaterialTheme.typography.bodySmall
+                    text = if (isRegistering) {
+                        "Already have an account?"
+                    } else {
+                        "New to JARVIS?"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Button(
+                    onClick = {
+                        isRegistering = !isRegistering
+                        name = ""
+                        password = ""
+                        passwordVisible = false
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (isRegistering) {
+                            "Go to sign in"
+                        } else {
+                            "Create a new account"
+                        }
+                    )
+                }
+            }
+
+            if (busy) {
+                CircularProgressIndicator()
+            }
+
+            if (!message.isNullOrBlank()) {
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
-
-            Button(
-                onClick = {
-                    if (isRegistering) {
-                        onEmailSignUp(
-                            name.trim(),
-                            email.trim(),
-                            password
-                        )
-                    } else {
-                        onEmailSignIn(
-                            email.trim(),
-                            password
-                        )
-                    }
-                },
-                enabled = !busy &&
-                    email.isNotBlank() &&
-                    password.isNotBlank() &&
-                    (!isRegistering ||
-                        (name.isNotBlank() && password.length >= 8)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    if (isRegistering) {
-                        "Create account"
-                    } else {
-                        "Sign in"
-                    }
-                )
-            }
-
-            OutlinedButton(
-                onClick = onGoogleSignIn,
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Continue with Google")
-            }
-
-            OutlinedButton(
-                onClick = {
-                    onPasswordRecovery(email.trim())
-                },
-                enabled = !busy && email.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Forgot password?")
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                text = if (isRegistering) {
-                    "Already have an account?"
-                } else {
-                    "New to JARVIS?"
-                },
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            Button(
-                onClick = {
-                    isRegistering = !isRegistering
-                    name = ""
-                    password = ""
-                    passwordVisible = false
-                },
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    if (isRegistering) {
-                        "Go to sign in"
-                    } else {
-                        "Create a new account"
-                    }
-                )
-            }
-        }
-
-        if (busy) {
-            CircularProgressIndicator()
-        }
-
-        if (!message.isNullOrBlank()) {
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium
-            )
         }
     }
 }
