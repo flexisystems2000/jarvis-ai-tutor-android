@@ -9,16 +9,35 @@ import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.net.HttpURLConnection
+import java.net.URL
 
 private const val EMAIL_VERIFICATION_REDIRECT =
     "com.flexi.jarvis://auth/callback"
 
+private const val MASTERCLASS_VERIFY_URL =
+    "https://flexi-lessons-payment-api-virid.vercel.app/api/verify-masterclass"
+
+data class MasterclassVerificationResult(
+    val eligible: Boolean,
+    val message: String,
+    val expiresAt: String? = null,
+    val displayName: String? = null,
+    val code: String? = null
+)
+
 interface AccountRepository {
+
     suspend fun currentAccount(): Account?
 
     suspend fun signInWithEmail(
@@ -32,16 +51,18 @@ interface AccountRepository {
         name: String
     ): Result<Account>
 
-    suspend fun sendPasswordReset(email: String): Result<Unit>
+    suspend fun sendPasswordReset(
+        email: String
+    ): Result<Unit>
 
     suspend fun signInWithGoogle(
         idToken: String,
         nonce: String
     ): Result<Account>
 
-    suspend fun linkFlexiMasterclassAccount(
-        token: String
-    ): Result<Account>
+    suspend fun verifyFlexiMasterclassAccount(
+        whatsappNumber: String
+    ): Result<MasterclassVerificationResult>
 
     suspend fun signOut()
 }
@@ -51,6 +72,7 @@ class SupabaseAccountRepository(
 ) : AccountRepository {
 
     override suspend fun currentAccount(): Account? {
+
         supabase.auth.sessionStatus.first {
             it != SessionStatus.Initializing
         }
@@ -86,6 +108,7 @@ class SupabaseAccountRepository(
         email: String,
         password: String
     ): Result<Account> = runCatching {
+
         require(email.isNotBlank()) {
             "Enter your email address."
         }
@@ -109,6 +132,7 @@ class SupabaseAccountRepository(
         password: String,
         name: String
     ): Result<Account> = runCatching {
+
         require(name.isNotBlank()) {
             "Enter your full name."
         }
@@ -128,6 +152,7 @@ class SupabaseAccountRepository(
             Email,
             redirectUrl = EMAIL_VERIFICATION_REDIRECT
         ) {
+
             this.email = cleanEmail
             this.password = password
 
@@ -148,17 +173,21 @@ class SupabaseAccountRepository(
     override suspend fun sendPasswordReset(
         email: String
     ): Result<Unit> = runCatching {
+
         require(email.isNotBlank()) {
             "Enter your email address."
         }
 
-        supabase.auth.resetPasswordForEmail(email.trim())
+        supabase.auth.resetPasswordForEmail(
+            email.trim()
+        )
     }
 
     override suspend fun signInWithGoogle(
         idToken: String,
         nonce: String
     ): Result<Account> = runCatching {
+
         require(idToken.isNotBlank()) {
             "Google did not return an ID token."
         }
@@ -168,6 +197,7 @@ class SupabaseAccountRepository(
         }
 
         supabase.auth.signInWith(IDToken) {
+
             this.idToken = idToken
             provider = Google
             this.nonce = nonce
@@ -178,19 +208,141 @@ class SupabaseAccountRepository(
         }
     }
 
-    override suspend fun linkFlexiMasterclassAccount(
-        token: String
-    ): Result<Account> {
-        return Result.failure(
-            IllegalStateException(
-                "Flexi Masterclass verification is waiting for the " +
-                    "secure Flexi Lessons server verifier. No Masterclass " +
-                    "benefits will be granted until verification is completed."
-            )
-        )
+    override suspend fun verifyFlexiMasterclassAccount(
+        whatsappNumber: String
+    ): Result<MasterclassVerificationResult> = runCatching {
+
+        require(whatsappNumber.isNotBlank()) {
+            "Enter the WhatsApp number used for your Flexi Lessons registration."
+        }
+
+        // Retrieve the active Supabase access token.
+        // The token is never displayed or logged.
+
+        val accessToken =
+            supabase.auth.currentAccessTokenOrNull()
+                ?: throw IllegalStateException(
+                    "Your JARVIS sign-in session is missing. Please sign in again."
+                )
+
+        withContext(Dispatchers.IO) {
+
+            val connection =
+                (URL(MASTERCLASS_VERIFY_URL)
+                    .openConnection() as HttpURLConnection).apply {
+
+                    requestMethod = "POST"
+
+                    connectTimeout = 15000
+                    readTimeout = 15000
+
+                    doOutput = true
+
+                    setRequestProperty(
+                        "Authorization",
+                        "Bearer $accessToken"
+                    )
+
+                    setRequestProperty(
+                        "Content-Type",
+                        "application/json"
+                    )
+
+                    setRequestProperty(
+                        "Accept",
+                        "application/json"
+                    )
+                }
+
+            try {
+
+                // Send only the WhatsApp number.
+                // The server obtains the authenticated email
+                // from the Supabase access token.
+
+                val requestBody = buildJsonObject {
+                    put(
+                        "whatsappNumber",
+                        whatsappNumber.trim()
+                    )
+                }.toString()
+
+                connection.outputStream.use { output ->
+
+                    output.write(
+                        requestBody.toByteArray(Charsets.UTF_8)
+                    )
+                }
+
+                val statusCode = connection.responseCode
+
+                val responseStream =
+                    if (statusCode in 200..299) {
+                        connection.inputStream
+                    } else {
+                        connection.errorStream
+                    }
+
+                val responseText = responseStream
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    .orEmpty()
+
+                if (responseText.isBlank()) {
+                    throw IllegalStateException(
+                        "The Masterclass server returned an empty response (HTTP $statusCode)."
+                    )
+                }
+
+                val response =
+                    Json.parseToJsonElement(responseText).jsonObject
+
+                val eligible = response["eligible"]
+                    ?.jsonPrimitive
+                    ?.booleanOrNull ?: false
+
+                val message = response["message"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?: response["error"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                    ?: "Masterclass verification could not be completed."
+
+                // HTTP 404 is a valid registration-not-found result.
+                if (statusCode !in 200..299 && statusCode != 404) {
+                    throw IllegalStateException(message)
+                }
+
+                val accountObject =
+                    response["account"]?.jsonObject
+
+                MasterclassVerificationResult(
+                    eligible = eligible,
+                    message = message,
+
+                    expiresAt = response["expiresAt"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull,
+
+                    displayName = accountObject
+                        ?.get("displayName")
+                        ?.jsonPrimitive
+                        ?.contentOrNull,
+
+                    code = response["code"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                )
+
+            } finally {
+                connection.disconnect()
+            }
+        }
     }
 
     override suspend fun signOut() {
+
         supabase.auth.signOut()
 
         supabase.auth.sessionStatus.first {
