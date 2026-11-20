@@ -10,12 +10,15 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 private const val EMAIL_VERIFICATION_REDIRECT =
     "com.flexi.jarvis://auth/callback"
 
 interface AccountRepository {
-
     suspend fun currentAccount(): Account?
 
     suspend fun signInWithEmail(
@@ -29,9 +32,7 @@ interface AccountRepository {
         name: String
     ): Result<Account>
 
-    suspend fun sendPasswordReset(
-        email: String
-    ): Result<Unit>
+    suspend fun sendPasswordReset(email: String): Result<Unit>
 
     suspend fun signInWithGoogle(
         idToken: String,
@@ -50,8 +51,6 @@ class SupabaseAccountRepository(
 ) : AccountRepository {
 
     override suspend fun currentAccount(): Account? {
-
-        // Wait for Supabase to restore the saved session.
         supabase.auth.sessionStatus.first {
             it != SessionStatus.Initializing
         }
@@ -59,11 +58,24 @@ class SupabaseAccountRepository(
         val user = supabase.auth.currentUserOrNull()
             ?: return null
 
+        val metadata = user.userMetadata
+
+        val fullName = metadata
+            ?.get("full_name")
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            ?: metadata
+                ?.get("name")
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.takeIf { it.isNotBlank() }
+            ?: user.email?.substringBefore("@")
+            ?: "Student"
+
         return Account(
             id = user.id,
-            displayName = user.email
-                ?.substringBefore("@")
-                ?: "Student",
+            displayName = fullName,
             email = user.email,
             type = AccountType.FREE,
             isFlexiMasterclassLinked = false
@@ -74,7 +86,6 @@ class SupabaseAccountRepository(
         email: String,
         password: String
     ): Result<Account> = runCatching {
-
         require(email.isNotBlank()) {
             "Enter your email address."
         }
@@ -98,7 +109,6 @@ class SupabaseAccountRepository(
         password: String,
         name: String
     ): Result<Account> = runCatching {
-
         require(name.isNotBlank()) {
             "Enter your full name."
         }
@@ -111,22 +121,26 @@ class SupabaseAccountRepository(
             "Your password must contain at least 8 characters."
         }
 
-        // Request Supabase to redirect the verification link
-        // back into the installed JARVIS Android application.
+        val cleanName = name.trim()
+        val cleanEmail = email.trim()
+
         supabase.auth.signUpWith(
             Email,
             redirectUrl = EMAIL_VERIFICATION_REDIRECT
         ) {
-            this.email = email.trim()
+            this.email = cleanEmail
             this.password = password
+
+            data = buildJsonObject {
+                put("full_name", cleanName)
+                put("name", cleanName)
+            }
         }
 
-        // With email confirmation enabled, Supabase may not
-        // create an authenticated session until verification.
         currentAccount() ?: Account(
             id = "pending-email-verification",
-            displayName = name.trim(),
-            email = email.trim(),
+            displayName = cleanName,
+            email = cleanEmail,
             type = AccountType.FREE
         )
     }
@@ -134,7 +148,6 @@ class SupabaseAccountRepository(
     override suspend fun sendPasswordReset(
         email: String
     ): Result<Unit> = runCatching {
-
         require(email.isNotBlank()) {
             "Enter your email address."
         }
@@ -146,7 +159,6 @@ class SupabaseAccountRepository(
         idToken: String,
         nonce: String
     ): Result<Account> = runCatching {
-
         require(idToken.isNotBlank()) {
             "Google did not return an ID token."
         }
@@ -169,25 +181,18 @@ class SupabaseAccountRepository(
     override suspend fun linkFlexiMasterclassAccount(
         token: String
     ): Result<Account> {
-
-        // Masterclass access must only be granted after
-        // secure verification against the existing Flexi Lessons
-        // registration records on the server.
         return Result.failure(
             IllegalStateException(
                 "Flexi Masterclass verification is waiting for the " +
                     "secure Flexi Lessons server verifier. No Masterclass " +
-                    "benefits will be granted until that verification " +
-                    "is completed."
+                    "benefits will be granted until verification is completed."
             )
         )
     }
 
     override suspend fun signOut() {
-
         supabase.auth.signOut()
 
-        // Wait until Supabase confirms the session is cleared.
         supabase.auth.sessionStatus.first {
             it is SessionStatus.NotAuthenticated
         }
