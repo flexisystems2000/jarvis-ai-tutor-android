@@ -1,7 +1,8 @@
+
 package com.flexi.jarvis.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -9,13 +10,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.flexi.jarvis.JarvisApplication
 import com.flexi.jarvis.data.model.Account
 import com.flexi.jarvis.data.model.AccountType
+import com.flexi.jarvis.data.model.AppPreferences
 import com.flexi.jarvis.data.repository.DataStorePreferencesRepository
 import com.flexi.jarvis.data.repository.SupabaseAccountRepository
-import com.flexi.jarvis.ui.screens.*
+import com.flexi.jarvis.ui.screens.AccountScreen
+import com.flexi.jarvis.ui.screens.CbtScreen
+import com.flexi.jarvis.ui.screens.HistoryScreen
+import com.flexi.jarvis.ui.screens.PlansScreen
+import com.flexi.jarvis.ui.screens.SettingsScreen
+import com.flexi.jarvis.ui.screens.TutorScreen
 import com.flexi.jarvis.ui.theme.JarvisTheme
 import kotlinx.coroutines.launch
 
@@ -37,10 +43,9 @@ fun JarvisApp() {
         DataStorePreferencesRepository(context)
     }
 
-    val preferences by preferencesRepository.preferences
-        .collectAsStateWithLifecycle(
-            initialValue = com.flexi.jarvis.data.model.AppPreferences()
-        )
+    val preferences by preferencesRepository.preferences.collectAsState(
+        initial = AppPreferences()
+    )
 
     val accountRepository = remember {
         SupabaseAccountRepository(JarvisApplication.supabase)
@@ -51,13 +56,8 @@ fun JarvisApp() {
     var accountBusy by remember { mutableStateOf(false) }
     var accountMessage by remember { mutableStateOf<String?>(null) }
 
-    var selectedTab by remember {
-        mutableStateOf(AppTab.TUTOR)
-    }
-
-    var usedToday by remember {
-        mutableIntStateOf(0)
-    }
+    var selectedTab by remember { mutableStateOf(AppTab.TUTOR) }
+    var usedToday by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         runCatching {
@@ -71,24 +71,22 @@ fun JarvisApp() {
         accountLoading = false
     }
 
-    fun runAccountAction(
-        action: suspend () -> Result<Account>
-    ) {
+    fun runAccountAction(action: suspend () -> Result<Account>) {
         scope.launch {
             accountBusy = true
             accountMessage = null
 
-            action().onSuccess {
-                account = it
-                accountMessage = if (
-                    it.id == "pending-email-verification"
-                ) {
-                    "Registration submitted. Verify your email, then sign in."
-                } else {
-                    "Account updated successfully."
-                }
-            }.onFailure {
-                accountMessage = it.message ?: "Account operation failed."
+            action().onSuccess { result ->
+                account = result
+                accountMessage =
+                    if (result.id == "pending-email-verification") {
+                        "Registration submitted. Verify your email, then sign in."
+                    } else {
+                        "Account updated successfully."
+                    }
+            }.onFailure { error ->
+                accountMessage =
+                    error.message ?: "Account operation failed."
             }
 
             accountBusy = false
@@ -111,33 +109,24 @@ fun JarvisApp() {
             }
         ) { paddingValues ->
 
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier.padding(paddingValues)
-            ) {
+            Box(modifier = Modifier.padding(paddingValues)) {
                 when (selectedTab) {
                     AppTab.TUTOR -> {
                         TutorScreen(
                             tutorName = preferences.tutorName,
                             languageCode = preferences.languageCode,
                             webSearch = preferences.webSearchEnabled,
-                            onUsage = {
-                                usedToday++
-                            }
+                            onUsage = { usedToday++ }
                         )
                     }
 
-                    AppTab.CBT -> {
-                        CbtScreen()
-                    }
+                    AppTab.CBT -> CbtScreen()
 
-                    AppTab.HISTORY -> {
-                        HistoryScreen()
-                    }
+                    AppTab.HISTORY -> HistoryScreen()
 
                     AppTab.PLANS -> {
                         PlansScreen(
-                            accountType = account?.type
-                                ?: AccountType.FREE,
+                            accountType = account?.type ?: AccountType.FREE,
                             usedToday = usedToday,
                             onSelectPlan = {
                                 accountMessage =
@@ -205,7 +194,7 @@ fun JarvisApp() {
 
                             onGoogleSignIn = {
                                 accountMessage =
-                                    "Google sign-in needs its Android credential flow and configured OAuth client ID before it can be activated."
+                                    "Google sign-in needs its Android credential flow and configured OAuth client ID before activation."
                             },
 
                             onSignOut = {
