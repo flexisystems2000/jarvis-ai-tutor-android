@@ -8,6 +8,8 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.flow.first
 
 interface AccountRepository {
 
@@ -45,6 +47,12 @@ class SupabaseAccountRepository(
 ) : AccountRepository {
 
     override suspend fun currentAccount(): Account? {
+        // Do not check the user until Supabase has restored
+        // the locally saved authentication session.
+        supabase.auth.sessionStatus.first {
+            it != SessionStatus.Initializing
+        }
+
         val user = supabase.auth.currentUserOrNull()
             ?: return null
 
@@ -64,6 +72,14 @@ class SupabaseAccountRepository(
         password: String
     ): Result<Account> = runCatching {
 
+        require(email.isNotBlank()) {
+            "Enter your email address."
+        }
+
+        require(password.isNotBlank()) {
+            "Enter your password."
+        }
+
         supabase.auth.signInWith(Email) {
             this.email = email.trim()
             this.password = password
@@ -82,6 +98,10 @@ class SupabaseAccountRepository(
 
         require(name.isNotBlank()) {
             "Enter your full name."
+        }
+
+        require(email.isNotBlank()) {
+            "Enter your email address."
         }
 
         require(password.length >= 8) {
@@ -104,6 +124,10 @@ class SupabaseAccountRepository(
     override suspend fun sendPasswordReset(
         email: String
     ): Result<Unit> = runCatching {
+
+        require(email.isNotBlank()) {
+            "Enter your email address."
+        }
 
         supabase.auth.resetPasswordForEmail(email.trim())
     }
@@ -147,5 +171,10 @@ class SupabaseAccountRepository(
 
     override suspend fun signOut() {
         supabase.auth.signOut()
+
+        // Wait until Supabase confirms that the local session is cleared.
+        supabase.auth.sessionStatus.first {
+            it is SessionStatus.NotAuthenticated
+        }
     }
 }
