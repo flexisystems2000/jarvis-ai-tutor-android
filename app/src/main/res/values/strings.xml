@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">JARVIS AI Tutor</string>
-    <!-- Add the OAuth 2.0 Web client ID from the same Firebase project before enabling Google sign-in. -->
-    <string name="default_web_client_id"></string>
+
+    <!-- Google Cloud Web OAuth client ID.
+         This is NOT a Firebase client ID. -->
+    <string name="google_web_client_id"></string>
 </resources>
