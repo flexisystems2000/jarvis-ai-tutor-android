@@ -87,13 +87,13 @@ fun JarvisApp() {
         mutableIntStateOf(0)
     }
 
-    // Every account-related failure is translated in one place.
+    // Centralised application error handling.
     fun reportError(error: Throwable) {
         val appError = JarvisErrorHandler.handle(error)
 
         accountMessage = appError.message
 
-        // Do not log raw exception messages, tokens, passwords or request bodies.
+        // Never log passwords, tokens, API keys or request bodies.
         Log.w(
             ERROR_LOG_TAG,
             "code=${appError.code}, " +
@@ -104,6 +104,7 @@ fun JarvisApp() {
         )
     }
 
+    // Restore the existing Supabase session.
     LaunchedEffect(Unit) {
         runCatching {
             accountRepository.currentAccount()
@@ -147,9 +148,13 @@ fun JarvisApp() {
                     AppTab.entries.forEach { tab ->
                         NavigationBarItem(
                             selected = selectedTab == tab,
-                            onClick = { selectedTab = tab },
+                            onClick = {
+                                selectedTab = tab
+                            },
                             icon = {},
-                            label = { Text(tab.label) }
+                            label = {
+                                Text(tab.label)
+                            }
                         )
                     }
                 }
@@ -166,7 +171,9 @@ fun JarvisApp() {
                             tutorName = preferences.tutorName,
                             languageCode = preferences.languageCode,
                             webSearch = preferences.webSearchEnabled,
-                            onUsage = { usedToday++ }
+                            onUsage = {
+                                usedToday++
+                            }
                         )
                     }
 
@@ -298,6 +305,13 @@ fun JarvisApp() {
 
                                     accountBusy = false
                                 }
+                            },
+
+                            // FIX: Clear pending registration and return
+                            // to the normal sign-in screen.
+                            onGoToSignIn = {
+                                account = null
+                                accountMessage = null
                             }
                         )
                     }
