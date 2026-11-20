@@ -24,6 +24,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -40,6 +42,7 @@ fun AccountScreen(
     onPasswordRecovery: (String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    onVerifyMasterclass: (String) -> Unit,
     onGoToSignIn: () -> Unit
 ) {
     var isRegistering by remember { mutableStateOf(false) }
@@ -47,6 +50,7 @@ fun AccountScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var whatsappNumber by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -127,27 +131,61 @@ fun AccountScreen(
                 )
 
                 if (account.isFlexiMasterclassLinked) {
+
                     Text(
                         text = "Your existing Flexi Masterclass account is verified."
                     )
+
                 } else {
+
                     Text(
                         text = "Already registered on Flexi Lessons? " +
-                            "Your existing Flexi Lessons account will be " +
-                            "checked through the secure server verifier."
+                            "Verify your existing registration here."
                     )
 
                     Text(
-                        text = "You do not need to create another Masterclass account. " +
-                            "JARVIS will only activate Masterclass benefits after " +
-                            "the existing Flexi Lessons registration is verified.",
+                        text = "Use the same WhatsApp number you provided " +
+                            "when registering on Flexi Lessons. Your JARVIS " +
+                            "sign-in email will be checked automatically.",
                         style = MaterialTheme.typography.bodySmall
                     )
 
+                    OutlinedTextField(
+                        value = whatsappNumber,
+                        onValueChange = {
+                            whatsappNumber = it
+                        },
+                        label = {
+                            Text("Flexi Lessons WhatsApp number")
+                        },
+                        placeholder = {
+                            Text("+2348012345678")
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Phone
+                        ),
+                        singleLine = true,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            onVerifyMasterclass(
+                                whatsappNumber.trim()
+                            )
+                        },
+                        enabled = !busy &&
+                            whatsappNumber.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Verify Flexi Masterclass")
+                    }
+
                     Text(
-                        text = "Masterclass verification is not yet connected. " +
-                            "Your account remains on its current plan until verification is available.",
-                        color = MaterialTheme.colorScheme.error,
+                        text = "Only an existing registration with verified " +
+                            "payment and an active subscription can qualify. " +
+                            "No new Masterclass account is created.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
