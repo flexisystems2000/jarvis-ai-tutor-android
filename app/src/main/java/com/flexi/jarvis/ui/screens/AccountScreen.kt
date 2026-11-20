@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -20,7 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.flexi.jarvis.data.model.Account
-import kotlinx.coroutines.launch
+import com.flexi.jarvis.data.model.AccountType
 
 @Composable
 fun AccountScreen(
@@ -31,91 +32,268 @@ fun AccountScreen(
     onEmailSignUp: (String, String, String) -> Unit,
     onPasswordRecovery: (String) -> Unit,
     onGoogleSignIn: () -> Unit,
-    onMasterclassLink: (String) -> Unit,
     onSignOut: () -> Unit
 ) {
-    var isRegistering by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var masterclassToken by remember { mutableStateOf("") }
+    var isRegistering by remember {
+        mutableStateOf(false)
+    }
+
+    var name by remember {
+        mutableStateOf("")
+    }
+
+    var email by remember {
+        mutableStateOf("")
+    }
+
+    var password by remember {
+        mutableStateOf("")
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Your JARVIS account", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = "JARVIS Account",
+            style = MaterialTheme.typography.headlineSmall
+        )
+
+        Text(
+            text = "Your account keeps your learning experience connected.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+
+        HorizontalDivider()
+
         if (account != null) {
-            Text("Signed in as ${account.displayName}", style = MaterialTheme.typography.titleMedium)
-            Text(account.email.orEmpty())
-            Text(if (account.isFlexiMasterclassLinked) "Flexi Masterclass verified" else "Free account")
-            Button(onClick = onSignOut, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                Text("Sign out")
+
+            if (account.id == "pending-email-verification") {
+                Text(
+                    text = "Registration submitted",
+                    style = MaterialTheme.typography.titleLarge
+                )
+
+                Text(
+                    text = "A verification email has been sent to ${account.email.orEmpty()}. " +
+                        "Verify your email address, then return and sign in."
+                )
+
+                OutlinedButton(
+                    onClick = {
+                        isRegistering = false
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Go to sign in")
+                }
+
+            } else {
+                Text(
+                    text = "Welcome, ${account.displayName}",
+                    style = MaterialTheme.typography.titleLarge
+                )
+
+                Text(
+                    text = account.email.orEmpty(),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Text(
+                    text = "Account plan: ${account.type.displayName()}",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                Button(
+                    onClick = onSignOut,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Sign out")
+                }
+
+                HorizontalDivider()
+
+                Text(
+                    text = "Flexi Masterclass",
+                    style = MaterialTheme.typography.titleLarge
+                )
+
+                if (account.isFlexiMasterclassLinked) {
+                    Text(
+                        text = "Your existing Flexi Masterclass account is verified."
+                    )
+                } else {
+                    Text(
+                        text = "Already registered on Flexi Lessons? " +
+                            "Your existing Flexi Lessons account will be " +
+                            "checked through the secure server verifier."
+                    )
+
+                    Text(
+                        text = "You do not need to create another Masterclass account. " +
+                            "JARVIS will only activate Masterclass benefits after " +
+                            "the existing Flexi Lessons registration is verified.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    Text(
+                        text = "Masterclass verification is not yet connected. " +
+                            "Your account remains on its current plan until verification is available.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
-            Spacer(Modifier.height(8.dp))
-            Text("Link existing Flexi Masterclass account", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = masterclassToken, onValueChange = { masterclassToken = it },
-                label = { Text("Flexi verification code") }, modifier = Modifier.fillMaxWidth()
-            )
-            Button(
-                onClick = { onMasterclassLink(masterclassToken) },
-                enabled = !busy && masterclassToken.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Verify Flexi Masterclass account") }
+
         } else {
             Text(
-                if (isRegistering) "Create your account" else "Sign in to continue",
-                style = MaterialTheme.typography.titleMedium
+                text = if (isRegistering) {
+                    "Create your JARVIS account"
+                } else {
+                    "Sign in to JARVIS"
+                },
+                style = MaterialTheme.typography.titleLarge
             )
+
             if (isRegistering) {
-                OutlinedTextField(name, { name = it }, label = { Text("Full name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Full name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !busy
+                )
             }
+
             OutlinedTextField(
-                email, { email = it }, label = { Text("Email address") },
-                modifier = Modifier.fillMaxWidth(), singleLine = true
+                value = email,
+                onValueChange = { email = it.trim() },
+                label = { Text("Email address") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = !busy
             )
+
             OutlinedTextField(
-                password, { password = it }, label = { Text("Password") },
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
                 visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(), singleLine = true
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = !busy
             )
+
+            if (isRegistering) {
+                Text(
+                    text = "Password must contain at least 8 characters.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
             Button(
                 onClick = {
-                    if (isRegistering) onEmailSignUp(name, email, password)
-                    else onEmailSignIn(email, password)
+                    if (isRegistering) {
+                        onEmailSignUp(
+                            name.trim(),
+                            email.trim(),
+                            password
+                        )
+                    } else {
+                        onEmailSignIn(
+                            email.trim(),
+                            password
+                        )
+                    }
                 },
-                enabled = !busy && email.isNotBlank() && password.isNotBlank() &&
-                    (!isRegistering || name.isNotBlank()),
+                enabled = !busy &&
+                    email.isNotBlank() &&
+                    password.isNotBlank() &&
+                    (!isRegistering ||
+                        (name.isNotBlank() && password.length >= 8)),
                 modifier = Modifier.fillMaxWidth()
-            ) { Text(if (isRegistering) "Create account" else "Sign in with email") }
+            ) {
+                Text(
+                    if (isRegistering) {
+                        "Create account"
+                    } else {
+                        "Sign in"
+                    }
+                )
+            }
 
             OutlinedButton(
-                onClick = onGoogleSignIn, enabled = !busy, modifier = Modifier.fillMaxWidth()
-            ) { Text("Continue with Google") }
+                onClick = onGoogleSignIn,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Continue with Google")
+            }
 
             OutlinedButton(
-                onClick = { onPasswordRecovery(email) },
+                onClick = {
+                    onPasswordRecovery(email.trim())
+                },
                 enabled = !busy && email.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Forgot password? Send recovery email") }
+            ) {
+                Text("Forgot password?")
+            }
+
+            Spacer(Modifier.height(8.dp))
 
             Text(
-                if (isRegistering) "Already registered? Sign in"
-                else "New to JARVIS? Create an account",
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
+                text = if (isRegistering) {
+                    "Already have an account?"
+                } else {
+                    "New to JARVIS?"
+                },
+                style = MaterialTheme.typography.bodyMedium
             )
-            Button(onClick = { isRegistering = !isRegistering }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (isRegistering) "Go to sign in" else "Create new account")
+
+            Button(
+                onClick = {
+                    isRegistering = !isRegistering
+                    name = ""
+                    password = ""
+                },
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (isRegistering) {
+                        "Go to sign in"
+                    } else {
+                        "Create a new account"
+                    }
+                )
             }
         }
 
-        if (busy) CircularProgressIndicator()
-        if (!message.isNullOrBlank()) Text(message, color = MaterialTheme.colorScheme.error)
-        Text(
-            "Flexi Masterclass access is granted only after the existing Flexi Lessons registration is verified by its secure server. A JARVIS sign-up alone never grants Masterclass benefits.",
-            style = MaterialTheme.typography.bodySmall
-        )
+        if (busy) {
+            CircularProgressIndicator()
+        }
+
+        if (!message.isNullOrBlank()) {
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
+
+private fun AccountType.displayName(): String {
+    return when (this) {
+        AccountType.FREE -> "Free"
+        AccountType.JARVIS_PLUS -> "Jarvis Plus"
+        AccountType.JARVIS_PRO -> "Jarvis Pro"
+        AccountType.FLEXI_MASTERCLASS -> "Flexi Masterclass"
     }
 }
