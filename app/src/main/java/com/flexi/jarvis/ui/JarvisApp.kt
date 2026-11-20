@@ -28,6 +28,8 @@ import com.flexi.jarvis.ui.screens.PlansScreen
 import com.flexi.jarvis.ui.screens.SettingsScreen
 import com.flexi.jarvis.ui.screens.TutorScreen
 import com.flexi.jarvis.ui.theme.JarvisTheme
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.launch
 
 private const val ERROR_LOG_TAG = "JARVIS_ERROR"
@@ -87,13 +89,11 @@ fun JarvisApp() {
         mutableIntStateOf(0)
     }
 
-    // Centralised application error handling.
     fun reportError(error: Throwable) {
         val appError = JarvisErrorHandler.handle(error)
 
         accountMessage = appError.message
 
-        // Never log passwords, tokens, API keys or request bodies.
         Log.w(
             ERROR_LOG_TAG,
             "code=${appError.code}, " +
@@ -104,17 +104,44 @@ fun JarvisApp() {
         )
     }
 
-    // Restore the existing Supabase session.
+    // Observe Supabase authentication state continuously.
     LaunchedEffect(Unit) {
-        runCatching {
-            accountRepository.currentAccount()
-        }.onSuccess {
-            account = it
-        }.onFailure { error ->
-            reportError(error)
-        }
+        JarvisApplication.supabase.auth.sessionStatus.collect { status ->
+            when (status) {
+                SessionStatus.Initializing -> {
+                    accountLoading = true
+                }
 
-        accountLoading = false
+                is SessionStatus.Authenticated -> {
+                    accountLoading = true
+
+                    runCatching {
+                        accountRepository.currentAccount()
+                    }.onSuccess { restoredAccount ->
+                        account = restoredAccount
+
+                        if (restoredAccount != null) {
+                            selectedTab = AppTab.ACCOUNT
+                            accountMessage =
+                                "Your account is ready."
+                        }
+                    }.onFailure { error ->
+                        reportError(error)
+                    }
+
+                    accountLoading = false
+                }
+
+                is SessionStatus.NotAuthenticated -> {
+                    account = null
+                    accountLoading = false
+                }
+
+                else -> {
+                    accountLoading = false
+                }
+            }
+        }
     }
 
     fun runAccountAction(
@@ -133,6 +160,10 @@ fun JarvisApp() {
                     } else {
                         "Account updated successfully."
                     }
+
+                if (result.id != "pending-email-verification") {
+                    selectedTab = AppTab.ACCOUNT
+                }
             }.onFailure { error ->
                 reportError(error)
             }
@@ -279,6 +310,7 @@ fun JarvisApp() {
                                             account = signedInAccount
                                             accountMessage =
                                                 "Google sign-in successful!"
+                                            selectedTab = AppTab.ACCOUNT
                                         }.onFailure { error ->
                                             reportError(error)
                                         }
@@ -307,8 +339,6 @@ fun JarvisApp() {
                                 }
                             },
 
-                            // FIX: Clear pending registration and return
-                            // to the normal sign-in screen.
                             onGoToSignIn = {
                                 account = null
                                 accountMessage = null
