@@ -1,6 +1,6 @@
-
 package com.flexi.jarvis.data.repository
 
+import com.flexi.jarvis.BuildConfig
 import com.flexi.jarvis.data.model.Account
 import com.flexi.jarvis.data.model.AccountType
 import io.github.jan.supabase.SupabaseClient
@@ -16,17 +16,24 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.time.Instant
+import java.nio.charset.StandardCharsets
 
 private const val EMAIL_VERIFICATION_REDIRECT =
     "com.flexi.jarvis://auth/callback"
 
 private const val MASTERCLASS_VERIFY_URL =
     "https://flexi-lessons-payment-api-virid.vercel.app/api/verify-masterclass"
+
+private const val SUPABASE_ENTITLEMENTS_URL =
+    BuildConfig.SUPABASE_URL + "/rest/v1/masterclass_entitlements"
 
 data class MasterclassVerificationResult(
     val eligible: Boolean,
@@ -95,13 +102,123 @@ class SupabaseAccountRepository(
             ?: user.email?.substringBefore("@")
             ?: "Student"
 
+        // Fail closed: if entitlement lookup fails or the subscription
+        // has expired, the account remains FREE.
+        val activeExpiry = runCatching {
+            fetchActiveMasterclassExpiry(user.id)
+        }.getOrNull()
+
+        val isMasterclassActive = activeExpiry != null
+
         return Account(
             id = user.id,
             displayName = fullName,
             email = user.email,
-            type = AccountType.FREE,
-            isFlexiMasterclassLinked = false
+            type = if (isMasterclassActive) {
+                AccountType.FLEXI_MASTERCLASS
+            } else {
+                AccountType.FREE
+            },
+            isFlexiMasterclassLinked = isMasterclassActive,
+            masterclassExpiresAt = activeExpiry
         )
+    }
+
+    /**
+     * Reads only the signed-in user's entitlement.
+     *
+     * Uses the user's own Supabase access token and the public
+     * publishable key. No service-role key is included in the APK.
+     */
+    private suspend fun fetchActiveMasterclassExpiry(
+        userId: String
+    ): String? = withContext(Dispatchers.IO) {
+
+        val accessToken =
+            supabase.auth.currentAccessTokenOrNull()
+                ?: return@withContext null
+
+        val now = Instant.now().toString()
+
+        val encodedUserId = URLEncoder.encode(
+            userId,
+            StandardCharsets.UTF_8.name()
+        )
+
+        val encodedNow = URLEncoder.encode(
+            now,
+            StandardCharsets.UTF_8.name()
+        )
+
+        val requestUrl =
+            "$SUPABASE_ENTITLEMENTS_URL" +
+                "?select=expires_at" +
+                "&user_id=eq.$encodedUserId" +
+                "&expires_at=gt.$encodedNow" +
+                "&order=expires_at.desc" +
+                "&limit=1"
+
+        val connection =
+            (URL(requestUrl).openConnection() as HttpURLConnection).apply {
+
+                requestMethod = "GET"
+                connectTimeout = 15000
+                readTimeout = 15000
+
+                setRequestProperty(
+                    "apikey",
+                    BuildConfig.SUPABASE_PUBLISHABLE_KEY
+                )
+
+                setRequestProperty(
+                    "Authorization",
+                    "Bearer $accessToken"
+                )
+
+                setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+            }
+
+        try {
+            val statusCode = connection.responseCode
+
+            if (statusCode !in 200..299) {
+                return@withContext null
+            }
+
+            val responseText = connection.inputStream
+                .bufferedReader()
+                .use { it.readText() }
+
+            if (responseText.isBlank()) {
+                return@withContext null
+            }
+
+            val rows = Json.parseToJsonElement(responseText)
+                .jsonArray
+
+            val expiry = rows.firstOrNull()
+                ?.jsonObject
+                ?.get("expires_at")
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?: return@withContext null
+
+            // Check expiry again locally. Never trust row presence alone.
+            val expiryInstant = runCatching {
+                Instant.parse(expiry)
+            }.getOrNull() ?: return@withContext null
+
+            if (!expiryInstant.isAfter(Instant.now())) {
+                return@withContext null
+            }
+
+            expiry
+        } finally {
+            connection.disconnect()
+        }
     }
 
     override suspend fun signInWithEmail(
@@ -152,7 +269,6 @@ class SupabaseAccountRepository(
             Email,
             redirectUrl = EMAIL_VERIFICATION_REDIRECT
         ) {
-
             this.email = cleanEmail
             this.password = password
 
@@ -178,9 +294,7 @@ class SupabaseAccountRepository(
             "Enter your email address."
         }
 
-        supabase.auth.resetPasswordForEmail(
-            email.trim()
-        )
+        supabase.auth.resetPasswordForEmail(email.trim())
     }
 
     override suspend fun signInWithGoogle(
@@ -197,7 +311,6 @@ class SupabaseAccountRepository(
         }
 
         supabase.auth.signInWith(IDToken) {
-
             this.idToken = idToken
             provider = Google
             this.nonce = nonce
@@ -216,9 +329,6 @@ class SupabaseAccountRepository(
             "Enter the WhatsApp number used for your Flexi Lessons registration."
         }
 
-        // Retrieve the active Supabase access token.
-        // The token is never displayed or logged.
-
         val accessToken =
             supabase.auth.currentAccessTokenOrNull()
                 ?: throw IllegalStateException(
@@ -232,10 +342,8 @@ class SupabaseAccountRepository(
                     .openConnection() as HttpURLConnection).apply {
 
                     requestMethod = "POST"
-
                     connectTimeout = 15000
                     readTimeout = 15000
-
                     doOutput = true
 
                     setRequestProperty(
@@ -255,11 +363,6 @@ class SupabaseAccountRepository(
                 }
 
             try {
-
-                // Send only the WhatsApp number.
-                // The server obtains the authenticated email
-                // from the Supabase access token.
-
                 val requestBody = buildJsonObject {
                     put(
                         "whatsappNumber",
@@ -268,7 +371,6 @@ class SupabaseAccountRepository(
                 }.toString()
 
                 connection.outputStream.use { output ->
-
                     output.write(
                         requestBody.toByteArray(Charsets.UTF_8)
                     )
@@ -309,32 +411,26 @@ class SupabaseAccountRepository(
                         ?.contentOrNull
                     ?: "Masterclass verification could not be completed."
 
-                // HTTP 404 is a valid registration-not-found result.
                 if (statusCode !in 200..299 && statusCode != 404) {
                     throw IllegalStateException(message)
                 }
 
-                val accountObject =
-                    response["account"]?.jsonObject
+                val accountObject = response["account"]?.jsonObject
 
                 MasterclassVerificationResult(
                     eligible = eligible,
                     message = message,
-
                     expiresAt = response["expiresAt"]
                         ?.jsonPrimitive
                         ?.contentOrNull,
-
                     displayName = accountObject
                         ?.get("displayName")
                         ?.jsonPrimitive
                         ?.contentOrNull,
-
                     code = response["code"]
                         ?.jsonPrimitive
                         ?.contentOrNull
                 )
-
             } finally {
                 connection.disconnect()
             }
@@ -342,7 +438,6 @@ class SupabaseAccountRepository(
     }
 
     override suspend fun signOut() {
-
         supabase.auth.signOut()
 
         supabase.auth.sessionStatus.first {
