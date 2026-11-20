@@ -1,182 +1,224 @@
-package com.flexi.jarvis.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+package com.flexi.jarvis.ui
+
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import com.flexi.jarvis.JarvisApplication
 import com.flexi.jarvis.data.model.Account
+import com.flexi.jarvis.data.model.AccountType
+import com.flexi.jarvis.data.model.AppPreferences
+import com.flexi.jarvis.data.repository.DataStorePreferencesRepository
+import com.flexi.jarvis.data.repository.SupabaseAccountRepository
+import com.flexi.jarvis.ui.screens.AccountScreen
+import com.flexi.jarvis.ui.screens.CbtScreen
+import com.flexi.jarvis.ui.screens.HistoryScreen
+import com.flexi.jarvis.ui.screens.PlansScreen
+import com.flexi.jarvis.ui.screens.SettingsScreen
+import com.flexi.jarvis.ui.screens.TutorScreen
+import com.flexi.jarvis.ui.theme.JarvisTheme
+import kotlinx.coroutines.launch
+
+private enum class AppTab(val label: String) {
+    TUTOR("Tutor"),
+    CBT("CBT"),
+    HISTORY("History"),
+    PLANS("Plans"),
+    SETTINGS("Settings"),
+    ACCOUNT("Account")
+}
 
 @Composable
-fun AccountScreen(
-    account: Account?,
-    busy: Boolean,
-    message: String?,
-    onEmailSignIn: (String, String) -> Unit,
-    onEmailSignUp: (String, String, String) -> Unit,
-    onPasswordRecovery: (String) -> Unit,
-    onGoogleSignIn: () -> Unit,
-    onSignOut: () -> Unit
-) {
-    var isRegistering by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+fun JarvisApp() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            "Your JARVIS account",
-            style = MaterialTheme.typography.headlineSmall
-        )
+    val preferencesRepository = remember {
+        DataStorePreferencesRepository(context)
+    }
 
-        if (account != null) {
-            if (account.id == "pending-email-verification") {
-                Text("Registration submitted")
-                Text(
-                    "Check your email and verify your address. " +
-                        "Then return here and sign in."
-                )
-            } else {
-                Text(
-                    "Signed in as ${account.displayName}",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(account.email.orEmpty())
-                Text("Free account")
+    val preferences by preferencesRepository.preferences.collectAsState(
+        initial = AppPreferences()
+    )
 
-                Button(
-                    onClick = onSignOut,
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Sign out")
-                }
+    val accountRepository = remember {
+        SupabaseAccountRepository(JarvisApplication.supabase)
+    }
 
-                Spacer(Modifier.height(8.dp))
+    var account by remember { mutableStateOf<Account?>(null) }
+    var accountLoading by remember { mutableStateOf(true) }
+    var accountBusy by remember { mutableStateOf(false) }
+    var accountMessage by remember { mutableStateOf<String?>(null) }
 
-                Text(
-                    "Flexi Masterclass",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    "Your existing Flexi Lessons account will be " +
-                        "verified through its secure server connection. " +
-                        "Masterclass access is not granted by ordinary JARVIS registration."
-                )
-            }
-        } else {
-            Text(
-                if (isRegistering) "Create your account"
-                else "Sign in to continue",
-                style = MaterialTheme.typography.titleMedium
-            )
+    var selectedTab by remember { mutableStateOf(AppTab.TUTOR) }
+    var usedToday by remember { mutableIntStateOf(0) }
 
-            if (isRegistering) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Full name") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("Email address") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            Button(
-                onClick = {
-                    if (isRegistering) {
-                        onEmailSignUp(name, email, password)
-                    } else {
-                        onEmailSignIn(email, password)
-                    }
-                },
-                enabled = !busy &&
-                    email.isNotBlank() &&
-                    password.isNotBlank() &&
-                    (!isRegistering || name.isNotBlank()),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    if (isRegistering) "Create account"
-                    else "Sign in with email"
-                )
-            }
-
-            OutlinedButton(
-                onClick = onGoogleSignIn,
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Continue with Google")
-            }
-
-            OutlinedButton(
-                onClick = { onPasswordRecovery(email) },
-                enabled = !busy && email.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Forgot password? Send recovery email")
-            }
-
-            Text(
-                if (isRegistering) "Already registered? Sign in"
-                else "New to JARVIS? Create an account",
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Button(
-                onClick = { isRegistering = !isRegistering },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    if (isRegistering) "Go to sign in"
-                    else "Create new account"
-                )
-            }
+    LaunchedEffect(Unit) {
+        runCatching {
+            accountRepository.currentAccount()
+        }.onSuccess {
+            account = it
+        }.onFailure {
+            accountMessage = it.message ?: "Unable to load your account."
         }
 
-        if (busy) CircularProgressIndicator()
+        accountLoading = false
+    }
 
-        if (!message.isNullOrBlank()) {
-            Text(
-                message,
-                color = MaterialTheme.colorScheme.error
-            )
+    fun runAccountAction(action: suspend () -> Result<Account>) {
+        scope.launch {
+            accountBusy = true
+            accountMessage = null
+
+            action().onSuccess { result ->
+                account = result
+                accountMessage =
+                    if (result.id == "pending-email-verification") {
+                        "Registration submitted. Verify your email, then sign in."
+                    } else {
+                        "Account updated successfully."
+                    }
+            }.onFailure { error ->
+                accountMessage =
+                    error.message ?: "Account operation failed."
+            }
+
+            accountBusy = false
+        }
+    }
+
+    JarvisTheme(theme = preferences.theme) {
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    AppTab.entries.forEach { tab ->
+                        NavigationBarItem(
+                            selected = selectedTab == tab,
+                            onClick = { selectedTab = tab },
+                            icon = {},
+                            label = { Text(tab.label) }
+                        )
+                    }
+                }
+            }
+        ) { paddingValues ->
+
+            Box(modifier = Modifier.padding(paddingValues)) {
+                when (selectedTab) {
+                    AppTab.TUTOR -> {
+                        TutorScreen(
+                            tutorName = preferences.tutorName,
+                            languageCode = preferences.languageCode,
+                            webSearch = preferences.webSearchEnabled,
+                            onUsage = { usedToday++ }
+                        )
+                    }
+
+                    AppTab.CBT -> CbtScreen()
+
+                    AppTab.HISTORY -> HistoryScreen()
+
+                    AppTab.PLANS -> {
+                        PlansScreen(
+                            accountType = account?.type ?: AccountType.FREE,
+                            usedToday = usedToday,
+                            onSelectPlan = {
+                                accountMessage =
+                                    "Secure plan payments will be enabled after backend integration."
+                                selectedTab = AppTab.ACCOUNT
+                            }
+                        )
+                    }
+
+                    AppTab.SETTINGS -> {
+                        SettingsScreen(
+                            preferences = preferences,
+                            onSave = { updated ->
+                                scope.launch {
+                                    preferencesRepository.save(updated)
+                                }
+                            }
+                        )
+                    }
+
+                    AppTab.ACCOUNT -> {
+                        AccountScreen(
+                            account = account,
+                            busy = accountBusy || accountLoading,
+                            message = accountMessage,
+
+                            onEmailSignIn = { email, password ->
+                                runAccountAction {
+                                    accountRepository.signInWithEmail(
+                                        email,
+                                        password
+                                    )
+                                }
+                            },
+
+                            onEmailSignUp = { name, email, password ->
+                                runAccountAction {
+                                    accountRepository.signUpWithEmail(
+                                        email,
+                                        password,
+                                        name
+                                    )
+                                }
+                            },
+
+                            onPasswordRecovery = { email ->
+                                scope.launch {
+                                    accountBusy = true
+                                    accountMessage = null
+
+                                    accountRepository
+                                        .sendPasswordReset(email)
+                                        .onSuccess {
+                                            accountMessage =
+                                                "Password recovery email sent. Check your inbox."
+                                        }
+                                        .onFailure {
+                                            accountMessage =
+                                                it.message ?: "Could not send recovery email."
+                                        }
+
+                                    accountBusy = false
+                                }
+                            },
+
+                            onGoogleSignIn = {
+                                accountMessage =
+                                    "Google sign-in needs its Android credential flow and configured OAuth client ID before activation."
+                            },
+
+                            onSignOut = {
+                                scope.launch {
+                                    accountBusy = true
+                                    accountMessage = null
+
+                                    runCatching {
+                                        accountRepository.signOut()
+                                    }.onSuccess {
+                                        account = null
+                                        accountMessage = "You have signed out."
+                                    }.onFailure {
+                                        accountMessage =
+                                            it.message ?: "Sign-out failed."
+                                    }
+
+                                    accountBusy = false
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }
