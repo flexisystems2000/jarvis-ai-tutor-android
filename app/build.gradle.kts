@@ -27,7 +27,22 @@ val supabasePublishableKey = localProperties.getProperty(
     "YOUR_SUPABASE_PUBLISHABLE_KEY"
 )
 
+val releaseStoreFile = file("keystore/jarvis-release.jks")
+
+val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+
 android {
+    signingConfigs {
+        create("release") {
+            storeFile = releaseStoreFile
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+
     namespace = "com.flexi.jarvis"
     compileSdk = 36
 
@@ -61,6 +76,7 @@ android {
         }
 
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
 
             proguardFiles(
