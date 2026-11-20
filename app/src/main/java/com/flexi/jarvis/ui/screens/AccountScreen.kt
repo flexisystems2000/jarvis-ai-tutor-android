@@ -39,7 +39,8 @@ fun AccountScreen(
     onEmailSignUp: (String, String, String) -> Unit,
     onPasswordRecovery: (String) -> Unit,
     onGoogleSignIn: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    onGoToSignIn: () -> Unit
 ) {
     var isRegistering by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
@@ -67,7 +68,9 @@ fun AccountScreen(
         HorizontalDivider()
 
         if (account != null) {
+
             if (account.id == "pending-email-verification") {
+
                 Text(
                     text = "Registration submitted",
                     style = MaterialTheme.typography.titleLarge
@@ -83,12 +86,16 @@ fun AccountScreen(
                         isRegistering = false
                         password = ""
                         passwordVisible = false
+                        onGoToSignIn()
                     },
+                    enabled = !busy,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Go to sign in")
                 }
+
             } else {
+
                 Text(
                     text = "Welcome, ${account.displayName}",
                     style = MaterialTheme.typography.titleLarge
@@ -145,7 +152,9 @@ fun AccountScreen(
                     )
                 }
             }
+
         } else {
+
             Text(
                 text = if (isRegistering) {
                     "Create your JARVIS account"
