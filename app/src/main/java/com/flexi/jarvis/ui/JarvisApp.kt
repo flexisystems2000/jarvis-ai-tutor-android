@@ -3,6 +3,7 @@ package com.flexi.jarvis.ui
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.NavigationBar
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.flexi.jarvis.JarvisApplication
 import com.flexi.jarvis.auth.GoogleCredentialManager
+import com.flexi.jarvis.core.errors.JarvisErrorHandler
 import com.flexi.jarvis.data.model.Account
 import com.flexi.jarvis.data.model.AccountType
 import com.flexi.jarvis.data.model.AppPreferences
@@ -27,6 +29,8 @@ import com.flexi.jarvis.ui.screens.SettingsScreen
 import com.flexi.jarvis.ui.screens.TutorScreen
 import com.flexi.jarvis.ui.theme.JarvisTheme
 import kotlinx.coroutines.launch
+
+private const val ERROR_LOG_TAG = "JARVIS_ERROR"
 
 private enum class AppTab(val label: String) {
     TUTOR("Tutor"),
@@ -83,14 +87,30 @@ fun JarvisApp() {
         mutableIntStateOf(0)
     }
 
+    // Every account-related failure is translated in one place.
+    fun reportError(error: Throwable) {
+        val appError = JarvisErrorHandler.handle(error)
+
+        accountMessage = appError.message
+
+        // Do not log raw exception messages, tokens, passwords or request bodies.
+        Log.w(
+            ERROR_LOG_TAG,
+            "code=${appError.code}, " +
+                "category=${appError.category.name}, " +
+                "retryable=${appError.retryable}, " +
+                "httpStatus=${appError.httpStatus ?: "unknown"}, " +
+                "exception=${error::class.simpleName ?: "Unknown"}"
+        )
+    }
+
     LaunchedEffect(Unit) {
         runCatching {
             accountRepository.currentAccount()
         }.onSuccess {
             account = it
-        }.onFailure {
-            accountMessage =
-                it.message ?: "Unable to load your account."
+        }.onFailure { error ->
+            reportError(error)
         }
 
         accountLoading = false
@@ -108,13 +128,12 @@ fun JarvisApp() {
 
                 accountMessage =
                     if (result.id == "pending-email-verification") {
-                        "Registration submitted. Verify your email, then sign in."
+                        "Registration request received. Check your email for verification before signing in."
                     } else {
                         "Account updated successfully."
                     }
             }.onFailure { error ->
-                accountMessage =
-                    error.message ?: "Account operation failed."
+                reportError(error)
             }
 
             accountBusy = false
@@ -174,7 +193,11 @@ fun JarvisApp() {
                             preferences = preferences,
                             onSave = { updated ->
                                 scope.launch {
-                                    preferencesRepository.save(updated)
+                                    runCatching {
+                                        preferencesRepository.save(updated)
+                                    }.onFailure { error ->
+                                        reportError(error)
+                                    }
                                 }
                             }
                         )
@@ -214,12 +237,10 @@ fun JarvisApp() {
                                         .sendPasswordReset(email)
                                         .onSuccess {
                                             accountMessage =
-                                                "Password recovery email sent. Check your inbox."
+                                                "If the account is eligible, a password recovery email will be sent. Check your inbox."
                                         }
-                                        .onFailure {
-                                            accountMessage =
-                                                it.message
-                                                    ?: "Could not send recovery email."
+                                        .onFailure { error ->
+                                            reportError(error)
                                         }
 
                                     accountBusy = false
@@ -252,9 +273,7 @@ fun JarvisApp() {
                                             accountMessage =
                                                 "Google sign-in successful!"
                                         }.onFailure { error ->
-                                            accountMessage =
-                                                error.message
-                                                    ?: "Google sign-in failed."
+                                            reportError(error)
                                         }
 
                                         accountBusy = false
@@ -273,10 +292,8 @@ fun JarvisApp() {
                                         account = null
                                         accountMessage =
                                             "You have signed out."
-                                    }.onFailure {
-                                        accountMessage =
-                                            it.message
-                                                ?: "Sign-out failed."
+                                    }.onFailure { error ->
+                                        reportError(error)
                                     }
 
                                     accountBusy = false
