@@ -1,3 +1,4 @@
+
 package com.flexi.jarvis
 
 import android.app.Application
@@ -19,7 +20,10 @@ class JarvisApplication : Application() {
             supabaseUrl = BuildConfig.SUPABASE_URL,
             supabaseKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
         ) {
-            install(Auth)
+            install(Auth) {
+                host = "auth"
+                scheme = "com.flexi.jarvis"
+            }
         }
     }
 }
