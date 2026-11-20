@@ -5,7 +5,7 @@ import com.flexi.jarvis.data.model.AccountType
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
-import io.github.jan.supabase.auth.providers.IDToken
+import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.providers.builtin.Email
 
 interface AccountRepository {
