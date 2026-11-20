@@ -1,4 +1,3 @@
-
 package com.flexi.jarvis.ui
 
 import android.content.Context
@@ -104,6 +103,14 @@ fun JarvisApp() {
         )
     }
 
+    /**
+     * Reloads the authenticated account and its current
+     * server-managed Masterclass entitlement.
+     */
+    suspend fun refreshAccount() {
+        account = accountRepository.currentAccount()
+    }
+
     LaunchedEffect(Unit) {
         JarvisApplication.supabase.auth.sessionStatus.collect { status ->
             when (status) {
@@ -115,11 +122,9 @@ fun JarvisApp() {
                     accountLoading = true
 
                     runCatching {
-                        accountRepository.currentAccount()
-                    }.onSuccess { restoredAccount ->
-                        account = restoredAccount
-
-                        if (restoredAccount != null) {
+                        refreshAccount()
+                    }.onSuccess {
+                        if (account != null) {
                             selectedTab = AppTab.ACCOUNT
                             accountMessage = "Your account is ready."
                         }
@@ -215,6 +220,8 @@ fun JarvisApp() {
                             accountType = account?.type
                                 ?: AccountType.FREE,
                             usedToday = usedToday,
+                            masterclassExpiresAt =
+                                account?.masterclassExpiresAt,
                             onSelectPlan = {
                                 accountMessage =
                                     "Secure plan payments will be enabled after backend integration."
@@ -348,29 +355,57 @@ fun JarvisApp() {
                                         )
                                         .onSuccess { result ->
 
-                                            accountMessage =
-                                                if (result.eligible) {
-                                                    buildString {
-                                                        append(
-                                                            "Flexi Masterclass verification successful!"
-                                                        )
+                                            if (result.eligible) {
+                                                // The API has saved the
+                                                // entitlement. Reload it
+                                                // from Supabase rather than
+                                                // trusting the response alone.
+                                                runCatching {
+                                                    refreshAccount()
+                                                }.onSuccess {
+                                                    accountMessage =
+                                                        if (account?.type ==
+                                                            AccountType.FLEXI_MASTERCLASS
+                                                        ) {
+                                                            buildString {
+                                                                append(
+                                                                    "Flexi Masterclass verification successful!"
+                                                                )
 
-                                                        result.displayName?.let {
-                                                            append("\nRegistered name: $it")
+                                                                result.displayName?.let {
+                                                                    append(
+                                                                        "\nRegistered name: $it"
+                                                                    )
+                                                                }
+
+                                                                account
+                                                                    ?.masterclassExpiresAt
+                                                                    ?.let {
+                                                                        append(
+                                                                            "\nSubscription expiry: $it"
+                                                                        )
+                                                                    }
+
+                                                                append(
+                                                                    "\nYour unlimited Masterclass access is now active."
+                                                                )
+                                                            }
+                                                        } else {
+                                                            "Your registration was verified, but an active entitlement could not be confirmed in Supabase. Please try again."
                                                         }
-
-                                                        result.expiresAt?.let {
-                                                            append("\nSubscription expiry: $it")
-                                                        }
-
-                                                        append(
-                                                            "\nYour registration is eligible. Paid-feature activation will follow the server-side entitlement integration."
-                                                        )
-                                                    }
-                                                } else {
-                                                    result.message
+                                                }.onFailure { error ->
+                                                    reportError(error)
+                                                }
+                                            } else {
+                                                // A failed verification must
+                                                // never leave an old premium
+                                                // account state on screen.
+                                                runCatching {
+                                                    refreshAccount()
                                                 }
 
+                                                accountMessage = result.message
+                                            }
                                         }
                                         .onFailure { error ->
                                             reportError(error)
