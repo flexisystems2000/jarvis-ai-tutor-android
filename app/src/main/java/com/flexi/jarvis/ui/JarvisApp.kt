@@ -1,6 +1,8 @@
 
 package com.flexi.jarvis.ui
 
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.NavigationBar
@@ -11,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.flexi.jarvis.JarvisApplication
+import com.flexi.jarvis.auth.GoogleCredentialManager
 import com.flexi.jarvis.data.model.Account
 import com.flexi.jarvis.data.model.AccountType
 import com.flexi.jarvis.data.model.AppPreferences
@@ -37,6 +40,11 @@ private enum class AppTab(val label: String) {
 @Composable
 fun JarvisApp() {
     val context = LocalContext.current
+
+    val activity = remember(context) {
+        context.findActivity()
+    }
+
     val scope = rememberCoroutineScope()
 
     val preferencesRepository = remember {
@@ -51,13 +59,29 @@ fun JarvisApp() {
         SupabaseAccountRepository(JarvisApplication.supabase)
     }
 
-    var account by remember { mutableStateOf<Account?>(null) }
-    var accountLoading by remember { mutableStateOf(true) }
-    var accountBusy by remember { mutableStateOf(false) }
-    var accountMessage by remember { mutableStateOf<String?>(null) }
+    var account by remember {
+        mutableStateOf<Account?>(null)
+    }
 
-    var selectedTab by remember { mutableStateOf(AppTab.TUTOR) }
-    var usedToday by remember { mutableIntStateOf(0) }
+    var accountLoading by remember {
+        mutableStateOf(true)
+    }
+
+    var accountBusy by remember {
+        mutableStateOf(false)
+    }
+
+    var accountMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var selectedTab by remember {
+        mutableStateOf(AppTab.TUTOR)
+    }
+
+    var usedToday by remember {
+        mutableIntStateOf(0)
+    }
 
     LaunchedEffect(Unit) {
         runCatching {
@@ -65,19 +89,23 @@ fun JarvisApp() {
         }.onSuccess {
             account = it
         }.onFailure {
-            accountMessage = it.message ?: "Unable to load your account."
+            accountMessage =
+                it.message ?: "Unable to load your account."
         }
 
         accountLoading = false
     }
 
-    fun runAccountAction(action: suspend () -> Result<Account>) {
+    fun runAccountAction(
+        action: suspend () -> Result<Account>
+    ) {
         scope.launch {
             accountBusy = true
             accountMessage = null
 
             action().onSuccess { result ->
                 account = result
+
                 accountMessage =
                     if (result.id == "pending-email-verification") {
                         "Registration submitted. Verify your email, then sign in."
@@ -109,8 +137,11 @@ fun JarvisApp() {
             }
         ) { paddingValues ->
 
-            Box(modifier = Modifier.padding(paddingValues)) {
+            Box(
+                modifier = Modifier.padding(paddingValues)
+            ) {
                 when (selectedTab) {
+
                     AppTab.TUTOR -> {
                         TutorScreen(
                             tutorName = preferences.tutorName,
@@ -126,11 +157,13 @@ fun JarvisApp() {
 
                     AppTab.PLANS -> {
                         PlansScreen(
-                            accountType = account?.type ?: AccountType.FREE,
+                            accountType = account?.type
+                                ?: AccountType.FREE,
                             usedToday = usedToday,
                             onSelectPlan = {
                                 accountMessage =
                                     "Secure plan payments will be enabled after backend integration."
+
                                 selectedTab = AppTab.ACCOUNT
                             }
                         )
@@ -185,7 +218,8 @@ fun JarvisApp() {
                                         }
                                         .onFailure {
                                             accountMessage =
-                                                it.message ?: "Could not send recovery email."
+                                                it.message
+                                                    ?: "Could not send recovery email."
                                         }
 
                                     accountBusy = false
@@ -193,8 +227,39 @@ fun JarvisApp() {
                             },
 
                             onGoogleSignIn = {
-                                accountMessage =
-                                    "Google sign-in needs its Android credential flow and configured OAuth client ID before activation."
+                                if (activity == null) {
+                                    accountMessage =
+                                        "Unable to start Google sign-in from this screen."
+                                } else {
+                                    scope.launch {
+                                        accountBusy = true
+                                        accountMessage = null
+
+                                        runCatching {
+                                            val googleResult =
+                                                GoogleCredentialManager(
+                                                    activity
+                                                ).getGoogleIdToken()
+
+                                            accountRepository
+                                                .signInWithGoogle(
+                                                    idToken = googleResult.idToken,
+                                                    nonce = googleResult.nonce
+                                                )
+                                                .getOrThrow()
+                                        }.onSuccess { signedInAccount ->
+                                            account = signedInAccount
+                                            accountMessage =
+                                                "Google sign-in successful!"
+                                        }.onFailure { error ->
+                                            accountMessage =
+                                                error.message
+                                                    ?: "Google sign-in failed."
+                                        }
+
+                                        accountBusy = false
+                                    }
+                                }
                             },
 
                             onSignOut = {
@@ -206,10 +271,12 @@ fun JarvisApp() {
                                         accountRepository.signOut()
                                     }.onSuccess {
                                         account = null
-                                        accountMessage = "You have signed out."
+                                        accountMessage =
+                                            "You have signed out."
                                     }.onFailure {
                                         accountMessage =
-                                            it.message ?: "Sign-out failed."
+                                            it.message
+                                                ?: "Sign-out failed."
                                     }
 
                                     accountBusy = false
@@ -220,5 +287,13 @@ fun JarvisApp() {
                 }
             }
         }
+    }
+}
+
+private fun Context.findActivity(): android.app.Activity? {
+    return when (this) {
+        is android.app.Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
     }
 }
