@@ -15,7 +15,7 @@ supabase = "3.2.6"
 ktor = "3.3.0"
 
 credentials = "1.6.0"
-googleid = "1.2.1"
+googleid = "1.1.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
