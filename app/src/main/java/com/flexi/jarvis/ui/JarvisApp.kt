@@ -4,12 +4,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.flexi.jarvis.data.model.AccountType
 import com.flexi.jarvis.data.model.AppPreferences
-import com.flexi.jarvis.data.model.AppTheme
+import com.flexi.jarvis.data.repository.DataStorePreferencesRepository
 import com.flexi.jarvis.data.repository.PlanPolicy
 import com.flexi.jarvis.ui.screens.*
+import com.flexi.jarvis.ui.theme.JarvisTheme
+import kotlinx.coroutines.launch
 
 private enum class Screen(val label: String) {
     HOME("Tutor"), CBT("CBT Practice"), HISTORY("History"), SETTINGS("Settings"), PLANS("Plans")
@@ -18,9 +21,27 @@ private enum class Screen(val label: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JarvisApp() {
+    val context = LocalContext.current
+    val preferencesRepository = remember(context) { DataStorePreferencesRepository(context.applicationContext) }
+    val prefs by preferencesRepository.preferences.collectAsState(initial = AppPreferences())
+    val scope = rememberCoroutineScope()
+
+    JarvisTheme(theme = prefs.theme) {
+        JarvisAppContent(
+            prefs = prefs,
+            onSavePreferences = { updated -> scope.launch { preferencesRepository.save(updated) } }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun JarvisAppContent(
+    prefs: AppPreferences,
+    onSavePreferences: (AppPreferences) -> Unit
+) {
     var screen by remember { mutableStateOf(Screen.HOME) }
     var drawerOpen by remember { mutableStateOf(false) }
-    var prefs by remember { mutableStateOf(AppPreferences()) }
     var accountType by remember { mutableStateOf(AccountType.FREE) }
     var usedToday by remember { mutableIntStateOf(0) }
     val usage = PlanPolicy.usage(accountType, usedToday)
@@ -39,7 +60,7 @@ fun JarvisApp() {
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
                 }
-                Divider()
+                HorizontalDivider()
                 Text("Account: ${usage.planLabel}", modifier = Modifier.padding(20.dp))
             }
         }
@@ -56,7 +77,7 @@ fun JarvisApp() {
                     }
                 )
             }
-        ) { padding ->
+        ) { _ ->
             when (screen) {
                 Screen.HOME -> TutorScreen(
                     tutorName = prefs.tutorName,
@@ -66,10 +87,7 @@ fun JarvisApp() {
                 )
                 Screen.CBT -> CbtScreen()
                 Screen.HISTORY -> HistoryScreen()
-                Screen.SETTINGS -> SettingsScreen(
-                    preferences = prefs,
-                    onSave = { prefs = it }
-                )
+                Screen.SETTINGS -> SettingsScreen(preferences = prefs, onSave = onSavePreferences)
                 Screen.PLANS -> PlansScreen(
                     accountType = accountType,
                     usedToday = usedToday,
