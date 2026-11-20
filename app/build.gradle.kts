@@ -12,7 +12,7 @@ val localProperties = Properties().apply {
 
     if (propertiesFile.exists()) {
         propertiesFile.inputStream().use { input ->
-            this.load(input)
+            load(input)
         }
     }
 }
@@ -67,6 +67,12 @@ android {
             "SUPABASE_PUBLISHABLE_KEY",
             "\"$supabasePublishableKey\""
         )
+
+        buildConfigField(
+            "String",
+            "GOOGLE_WEB_CLIENT_ID",
+            "\"932072395964-e1uqi451f6sn8cpascfhnrsd32t2dti4.apps.googleusercontent.com\""
+        )
     }
 
     buildTypes {
@@ -120,7 +126,10 @@ dependencies {
     implementation(libs.supabase.auth)
     implementation(libs.ktor.client.android)
 
-    implementation(libs.play.services.auth)
+    // Native Google sign-in
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services)
+    implementation(libs.googleid)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
