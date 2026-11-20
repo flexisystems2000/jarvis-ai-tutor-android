@@ -1,13 +1,19 @@
+
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val localProperties = java.util.Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) {
-        file.inputStream().use { load(it) }
+val localProperties = Properties().apply {
+    val propertiesFile = rootProject.file("local.properties")
+
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use { input ->
+            this.load(input)
+        }
     }
 }
 
@@ -34,6 +40,18 @@ android {
 
         testInstrumentationRunner =
             "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            "\"$supabaseUrl\""
+        )
+
+        buildConfigField(
+            "String",
+            "SUPABASE_PUBLISHABLE_KEY",
+            "\"$supabasePublishableKey\""
+        )
     }
 
     buildTypes {
@@ -44,6 +62,7 @@ android {
 
         release {
             isMinifyEnabled = true
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -63,20 +82,6 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-    }
-
-    defaultConfig {
-        buildConfigField(
-            "String",
-            "SUPABASE_URL",
-            "\"$supabaseUrl\""
-        )
-
-        buildConfigField(
-            "String",
-            "SUPABASE_PUBLISHABLE_KEY",
-            "\"$supabasePublishableKey\""
-        )
     }
 }
 
@@ -102,6 +107,7 @@ dependencies {
     implementation(libs.play.services.auth)
 
     testImplementation(libs.junit)
+
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
