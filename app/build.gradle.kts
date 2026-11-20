@@ -29,7 +29,7 @@ val supabasePublishableKey = localProperties.getProperty(
 
 android {
     namespace = "com.flexi.jarvis"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.flexi.jarvis"
@@ -107,7 +107,6 @@ dependencies {
     implementation(libs.play.services.auth)
 
     testImplementation(libs.junit)
-
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
