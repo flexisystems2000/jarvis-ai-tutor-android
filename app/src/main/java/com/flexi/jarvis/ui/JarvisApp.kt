@@ -20,7 +20,6 @@ import com.flexi.jarvis.data.model.Account
 import com.flexi.jarvis.data.model.AccountType
 import com.flexi.jarvis.data.model.AppPreferences
 import com.flexi.jarvis.data.repository.DataStorePreferencesRepository
-import com.flexi.jarvis.data.repository.PasswordRecoveryRepository
 import com.flexi.jarvis.data.repository.SupabaseAccountRepository
 import com.flexi.jarvis.ui.screens.AccountScreen
 import com.flexi.jarvis.ui.screens.CbtScreen
@@ -64,10 +63,6 @@ fun JarvisApp() {
 
     val accountRepository = remember {
         SupabaseAccountRepository(JarvisApplication.supabase)
-    }
-
-    val passwordRecoveryRepository = remember {
-        PasswordRecoveryRepository(JarvisApplication.supabase)
     }
 
     var account by remember {
@@ -277,23 +272,8 @@ fun JarvisApp() {
                                 }
                             },
 
-                            // Step 1: Send the recovery code.
-                            onSendPasswordRecoveryCode = { email ->
-                                passwordRecoveryRepository
-                                    .sendRecoveryCode(email)
-                            },
-
-                            // Step 2: Verify the code with Supabase.
-                            onVerifyPasswordRecoveryCode = { email, code ->
-                                passwordRecoveryRepository
-                                    .verifyRecoveryCode(email, code)
-                            },
-
-                            // Step 3: Save the new password.
-                            onUpdateRecoveredPassword = { newPassword ->
-                                passwordRecoveryRepository
-                                    .updatePassword(newPassword)
-                            },
+                            // AccountScreen handles the recovery flow itself.
+                            onPasswordRecovery = { },
 
                             onGoogleSignIn = {
                                 if (activity == null) {
