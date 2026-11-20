@@ -104,7 +104,6 @@ fun JarvisApp() {
         )
     }
 
-    // Observe Supabase authentication state continuously.
     LaunchedEffect(Unit) {
         JarvisApplication.supabase.auth.sessionStatus.collect { status ->
             when (status) {
@@ -122,8 +121,7 @@ fun JarvisApp() {
 
                         if (restoredAccount != null) {
                             selectedTab = AppTab.ACCOUNT
-                            accountMessage =
-                                "Your account is ready."
+                            accountMessage = "Your account is ready."
                         }
                     }.onFailure { error ->
                         reportError(error)
@@ -334,6 +332,49 @@ fun JarvisApp() {
                                     }.onFailure { error ->
                                         reportError(error)
                                     }
+
+                                    accountBusy = false
+                                }
+                            },
+
+                            onVerifyMasterclass = { whatsappNumber ->
+                                scope.launch {
+                                    accountBusy = true
+                                    accountMessage = null
+
+                                    accountRepository
+                                        .verifyFlexiMasterclassAccount(
+                                            whatsappNumber
+                                        )
+                                        .onSuccess { result ->
+
+                                            accountMessage =
+                                                if (result.eligible) {
+                                                    buildString {
+                                                        append(
+                                                            "Flexi Masterclass verification successful!"
+                                                        )
+
+                                                        result.displayName?.let {
+                                                            append("\nRegistered name: $it")
+                                                        }
+
+                                                        result.expiresAt?.let {
+                                                            append("\nSubscription expiry: $it")
+                                                        }
+
+                                                        append(
+                                                            "\nYour registration is eligible. Paid-feature activation will follow the server-side entitlement integration."
+                                                        )
+                                                    }
+                                                } else {
+                                                    result.message
+                                                }
+
+                                        }
+                                        .onFailure { error ->
+                                            reportError(error)
+                                        }
 
                                     accountBusy = false
                                 }
