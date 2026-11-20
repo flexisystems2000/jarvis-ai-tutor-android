@@ -1,3 +1,4 @@
+
 package com.flexi.jarvis.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
@@ -9,9 +10,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -19,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.flexi.jarvis.data.model.Account
 import com.flexi.jarvis.data.model.AccountType
@@ -34,21 +41,11 @@ fun AccountScreen(
     onGoogleSignIn: () -> Unit,
     onSignOut: () -> Unit
 ) {
-    var isRegistering by remember {
-        mutableStateOf(false)
-    }
-
-    var name by remember {
-        mutableStateOf("")
-    }
-
-    var email by remember {
-        mutableStateOf("")
-    }
-
-    var password by remember {
-        mutableStateOf("")
-    }
+    var isRegistering by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -70,7 +67,6 @@ fun AccountScreen(
         HorizontalDivider()
 
         if (account != null) {
-
             if (account.id == "pending-email-verification") {
                 Text(
                     text = "Registration submitted",
@@ -78,19 +74,20 @@ fun AccountScreen(
                 )
 
                 Text(
-                    text = "A verification email has been sent to ${account.email.orEmpty()}. " +
-                        "Verify your email address, then return and sign in."
+                    text = "A verification email has been requested for ${account.email.orEmpty()}. " +
+                        "Check your inbox before attempting to sign in."
                 )
 
                 OutlinedButton(
                     onClick = {
                         isRegistering = false
+                        password = ""
+                        passwordVisible = false
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Go to sign in")
                 }
-
             } else {
                 Text(
                     text = "Welcome, ${account.displayName}",
@@ -148,7 +145,6 @@ fun AccountScreen(
                     )
                 }
             }
-
         } else {
             Text(
                 text = if (isRegistering) {
@@ -172,7 +168,7 @@ fun AccountScreen(
 
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it.trim() },
+                onValueChange = { email = it },
                 label = { Text("Email address") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -183,7 +179,32 @@ fun AccountScreen(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
+                visualTransformation = if (passwordVisible) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    IconButton(
+                        onClick = {
+                            passwordVisible = !passwordVisible
+                        },
+                        enabled = !busy
+                    ) {
+                        Icon(
+                            imageVector = if (passwordVisible) {
+                                Icons.Filled.VisibilityOff
+                            } else {
+                                Icons.Filled.Visibility
+                            },
+                            contentDescription = if (passwordVisible) {
+                                "Hide password"
+                            } else {
+                                "Show password"
+                            }
+                        )
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = !busy
@@ -261,6 +282,7 @@ fun AccountScreen(
                     isRegistering = !isRegistering
                     name = ""
                     password = ""
+                    passwordVisible = false
                 },
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth()
