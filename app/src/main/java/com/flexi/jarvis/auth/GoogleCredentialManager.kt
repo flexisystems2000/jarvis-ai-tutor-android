@@ -9,6 +9,7 @@ import androidx.credentials.GetCredentialRequest
 import com.flexi.jarvis.BuildConfig
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import java.security.MessageDigest
 import java.security.SecureRandom
 
 data class GoogleIdTokenResult(
@@ -16,16 +17,18 @@ data class GoogleIdTokenResult(
     val nonce: String
 )
 
-class GoogleCredentialManager(private val activity: Activity) {
-
+class GoogleCredentialManager(
+    private val activity: Activity
+) {
     suspend fun getGoogleIdToken(): GoogleIdTokenResult {
         val nonce = createNonce()
+        val hashedNonce = sha256(nonce)
 
         val googleOption = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(false)
             .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
             .setAutoSelectEnabled(false)
-            .setNonce(nonce)
+            .setNonce(hashedNonce)
             .build()
 
         val request = GetCredentialRequest.Builder()
@@ -37,7 +40,8 @@ class GoogleCredentialManager(private val activity: Activity) {
 
         val credential = response.credential
 
-        if (credential !is CustomCredential ||
+        if (
+            credential !is CustomCredential ||
             credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
         ) {
             error("Google did not return a supported sign-in credential.")
@@ -60,5 +64,14 @@ class GoogleCredentialManager(private val activity: Activity) {
             bytes,
             Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
         )
+    }
+
+    private fun sha256(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+
+        return digest.joinToString("") { byte ->
+            "%02x".format(byte)
+        }
     }
 }
