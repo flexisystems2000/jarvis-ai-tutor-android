@@ -1,8 +1,10 @@
+
 package com.flexi.jarvis.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
+import java.io.IOException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -105,15 +107,37 @@ fun TutorScreen(
         }
     }
 
-    fun stopSpeechRecognition() {
+    fun releaseSpeechService() {
         runCatching {
-            speechService?.stop()
             speechService?.shutdown()
         }
 
         speechService = null
         listening = false
         partialTranscript = ""
+    }
+
+    fun stopSpeechRecognition() {
+        val activeService = speechService
+
+        if (activeService == null) {
+            listening = false
+            partialTranscript = ""
+            return
+        }
+
+        // stop() waits for Vosk's final result callback to be queued.
+        // Do not shut down the recorder here: the final callback still
+        // needs to be delivered to the main thread.
+        runCatching {
+            activeService.stop()
+        }.onFailure {
+            notice = it.message ?: "Unable to stop voice recognition."
+            releaseSpeechService()
+        }
+
+        listening = false
+        notice = "Finishing transcription..."
     }
 
     fun startSpeechRecognition() {
@@ -137,7 +161,6 @@ fun TutorScreen(
 
         try {
             val recognizer = Recognizer(model, 16000.0f)
-
             val service = SpeechService(recognizer, 16000.0f)
 
             speechService = service
@@ -177,38 +200,28 @@ fun TutorScreen(
                         appendTranscript(spokenText)
                     }
 
-                    listening = false
-                    partialTranscript = ""
+                    // The final transcript has now been handled.
+                    releaseSpeechService()
 
-                    runCatching {
-                        speechService?.shutdown()
+                    if (notice == "Finishing transcription...") {
+                        notice = null
                     }
-
-                    speechService = null
                 }
 
                 override fun onError(exception: Exception?) {
-                    listening = false
-                    partialTranscript = ""
-                    speechService = null
+                    releaseSpeechService()
 
                     notice = exception?.message
                         ?: "Voice recognition encountered an error."
                 }
 
                 override fun onTimeout() {
-                    listening = false
-                    partialTranscript = ""
-
-                    runCatching {
-                        speechService?.shutdown()
-                    }
-
-                    speechService = null
+                    releaseSpeechService()
+                    notice = null
                 }
             })
         } catch (error: Exception) {
-            listening = false
+            releaseSpeechService()
             notice = error.message
                 ?: "Unable to start offline voice recognition."
         }
@@ -235,14 +248,14 @@ fun TutorScreen(
             "model-en-us",
             "model",
             object : StorageService.Callback<Model> {
-
                 override fun onComplete(model: Model) {
                     voskModel = model
                     modelLoading = false
                     notice = null
                 }
-
-                override fun onError(exception: Exception) {
+            },
+            object : StorageService.Callback<IOException> {
+                override fun onComplete(exception: IOException) {
                     modelLoading = false
                     notice = "Offline voice model could not be loaded: " +
                         (exception.message ?: "Unknown error")
@@ -587,7 +600,8 @@ fun TutorScreen(
                 it,
                 color = if (
                     it.startsWith("Listening") ||
-                    it.startsWith("Media selected")
+                    it.startsWith("Media selected") ||
+                    it.startsWith("Finishing")
                 ) colors.primary else colors.error,
                 fontSize = 11.sp,
                 modifier = Modifier
