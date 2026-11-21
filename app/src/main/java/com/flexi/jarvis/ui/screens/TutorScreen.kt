@@ -1,9 +1,13 @@
+
 package com.flexi.jarvis.ui.screens
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +29,9 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -73,24 +80,106 @@ fun TutorScreen(
     var notice by remember { mutableStateOf<String?>(null) }
     var selectedMedia by remember { mutableStateOf<Uri?>(null) }
 
+    var attachmentMenuExpanded by remember { mutableStateOf(false) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordingFile by remember { mutableStateOf<File?>(null) }
 
+    // PHOTO AND VIDEO PICKER
     val mediaPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         selectedMedia = uri
+
         if (uri != null) {
-            notice = "Media selected. Media upload is not connected yet."
+            notice = "Photo or video selected. Media upload is not connected yet."
         }
     }
 
+    // DOCUMENT AND FILE PICKER
+    val documentPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        selectedMedia = uri
+
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+
+            notice = "File selected. File upload is not connected yet."
+        }
+    }
+
+    // CAMERA
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { saved ->
+        val uri = pendingCameraUri
+        pendingCameraUri = null
+
+        if (saved && uri != null) {
+            selectedMedia = uri
+            notice = "Photo captured. Media upload is not connected yet."
+        } else if (uri != null) {
+            runCatching {
+                context.contentResolver.delete(uri, null, null)
+            }
+        }
+    }
+
+    fun launchCamera() {
+        val values = ContentValues().apply {
+            put(
+                MediaStore.Images.Media.DISPLAY_NAME,
+                "jarvis-photo-${System.currentTimeMillis()}.jpg"
+            )
+
+            put(
+                MediaStore.Images.Media.MIME_TYPE,
+                "image/jpeg"
+            )
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(
+                    MediaStore.Images.Media.RELATIVE_PATH,
+                    "Pictures/JARVIS AI"
+                )
+            }
+        }
+
+        val uri = runCatching {
+            context.contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                values
+            )
+        }.getOrNull()
+
+        if (uri == null) {
+            notice = "Unable to open the camera. Please try again."
+            return
+        }
+
+        pendingCameraUri = uri
+        cameraLauncher.launch(uri)
+    }
+
+    // VOICE TRANSCRIPTION
     fun appendTranscript(text: String) {
         val cleanText = text.trim()
+
         if (cleanText.isNotEmpty()) {
-            prompt = listOf(prompt.trim(), cleanText)
+            prompt = listOf(
+                prompt.trim(),
+                cleanText
+            )
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
+
             notice = "Transcription added. Review or edit it before sending."
         }
     }
@@ -123,14 +212,19 @@ fun TutorScreen(
             recorder = newRecorder
             recordingFile = outputFile
             recording = true
+
             notice = "Recording. Tap the microphone again when you finish speaking."
+
         } catch (error: Exception) {
             runCatching { outputFile.delete() }
             runCatching { recorder?.release() }
+
             recorder = null
             recordingFile = null
             recording = false
-            notice = error.message ?: "Unable to start microphone recording."
+
+            notice = error.message
+                ?: "Unable to start microphone recording."
         }
     }
 
@@ -157,7 +251,11 @@ fun TutorScreen(
             activeRecorder.release()
         }
 
-        if (!recordingStopped || !audioFile.exists() || audioFile.length() == 0L) {
+        if (
+            !recordingStopped ||
+            !audioFile.exists() ||
+            audioFile.length() == 0L
+        ) {
             audioFile.delete()
             notice = "The recording was too short or could not be saved. Please try again."
             return
@@ -170,8 +268,11 @@ fun TutorScreen(
             try {
                 val transcript = speechTranscriptionApi.transcribe(audioFile)
                 appendTranscript(transcript)
+
             } catch (error: Exception) {
-                notice = error.message ?: "Voice transcription failed. Please try again."
+                notice = error.message
+                    ?: "Voice transcription failed. Please try again."
+
             } finally {
                 audioFile.delete()
                 transcribing = false
@@ -196,12 +297,14 @@ fun TutorScreen(
                 recorder?.reset()
                 recorder?.release()
             }
+
             recorder = null
             recordingFile?.delete()
             recordingFile = null
         }
     }
 
+    // LOAD CONVERSATION HISTORY
     LaunchedEffect(userId, selectedConversationId) {
         messages = emptyList()
         notice = null
@@ -217,18 +320,25 @@ fun TutorScreen(
             }.onSuccess {
                 messages = it
             }.onFailure {
-                notice = it.message ?: "Unable to load this conversation."
+                notice = it.message
+                    ?: "Unable to load this conversation."
             }
 
             loading = false
         }
     }
 
+    // SEND MESSAGE
     fun sendMessage() {
         val cleanPrompt = prompt.trim()
         val owner = userId
 
-        if (cleanPrompt.isEmpty() || sending || recording || transcribing) return
+        if (
+            cleanPrompt.isEmpty() ||
+            sending ||
+            recording ||
+            transcribing
+        ) return
 
         if (owner.isNullOrBlank()) {
             notice = "Sign in to save conversations to your account."
@@ -262,14 +372,16 @@ fun TutorScreen(
                     owner,
                     conversationId
                 )
+
             }.onSuccess { updatedMessages ->
                 messages = updatedMessages
                 prompt = ""
                 onUsage()
 
                 if (selectedMedia != null) {
-                    notice = "Your text was saved. The selected media still needs upload support."
+                    notice = "Your text was saved. The selected attachment still needs upload support."
                 }
+
             }.onFailure { error ->
                 notice = error.message
                     ?: "Your message could not be saved. Please try again."
@@ -295,6 +407,7 @@ fun TutorScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 19.sp
                 )
+
                 Text(
                     "Your intelligent learning companion",
                     color = colors.onSurfaceVariant,
@@ -348,7 +461,9 @@ fun TutorScreen(
                         )
                         .padding(20.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         Text(
                             "YOUR AI STUDY PARTNER",
                             color = colors.onPrimaryContainer,
@@ -356,6 +471,7 @@ fun TutorScreen(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.5.sp
                         )
+
                         Text(
                             "What would you\nlike to learn today?",
                             color = colors.onPrimaryContainer,
@@ -363,6 +479,7 @@ fun TutorScreen(
                             lineHeight = 33.sp,
                             fontWeight = FontWeight.SemiBold
                         )
+
                         Text(
                             "Ask questions, understand difficult topics and practise at your pace.",
                             color = colors.onPrimaryContainer,
@@ -383,7 +500,9 @@ fun TutorScreen(
 
                 Spacer(Modifier.height(10.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     SuggestionCard(
                         "Study a topic",
                         "Step-by-step lessons",
@@ -414,7 +533,10 @@ fun TutorScreen(
                         onClick = { prompt = suggestion },
                         color = colors.surface,
                         shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, colors.outlineVariant),
+                        border = BorderStroke(
+                            1.dp,
+                            colors.outlineVariant
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
@@ -429,7 +551,9 @@ fun TutorScreen(
                                 tint = colors.primary,
                                 modifier = Modifier.size(18.dp)
                             )
+
                             Spacer(Modifier.width(10.dp))
+
                             Text(
                                 suggestion,
                                 color = colors.onSurface,
@@ -439,6 +563,7 @@ fun TutorScreen(
                     }
                 }
             }
+
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -474,7 +599,9 @@ fun TutorScreen(
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
+
                                 Spacer(Modifier.height(5.dp))
+
                                 Text(
                                     message.content,
                                     color = colors.onSurface,
@@ -494,7 +621,9 @@ fun TutorScreen(
                     notice!!.startsWith("Recording") ||
                     notice!!.startsWith("Uploading") ||
                     notice!!.startsWith("Transcription added") ||
-                    notice!!.startsWith("Media selected")
+                    notice!!.startsWith("Photo or video selected") ||
+                    notice!!.startsWith("Photo captured") ||
+                    notice!!.startsWith("File selected")
                 ) colors.primary else colors.error,
                 fontSize = 11.sp,
                 modifier = Modifier
@@ -512,6 +641,7 @@ fun TutorScreen(
             )
         }
 
+        // SELECTED ATTACHMENT PREVIEW
         selectedMedia?.let { uri ->
             Surface(
                 color = colors.secondaryContainer,
@@ -521,7 +651,10 @@ fun TutorScreen(
                     .padding(bottom = 7.dp)
             ) {
                 Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    Modifier.padding(
+                        horizontal = 12.dp,
+                        vertical = 8.dp
+                    ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -529,15 +662,18 @@ fun TutorScreen(
                         contentDescription = null,
                         tint = colors.onSecondaryContainer
                     )
+
                     Spacer(Modifier.width(8.dp))
+
                     Text(
                         uri.lastPathSegment?.substringAfterLast('/')
-                            ?: "Selected media",
+                            ?: "Selected attachment",
                         color = colors.onSecondaryContainer,
                         fontSize = 12.sp,
                         modifier = Modifier.weight(1f),
                         maxLines = 1
                     )
+
                     IconButton(
                         onClick = { selectedMedia = null },
                         modifier = Modifier.size(30.dp)
@@ -552,6 +688,7 @@ fun TutorScreen(
             }
         }
 
+        // MESSAGE COMPOSER
         Surface(
             color = colors.surface,
             shape = RoundedCornerShape(26.dp),
@@ -567,20 +704,74 @@ fun TutorScreen(
                 ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = {
-                        mediaPicker.launch(
-                            PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.ImageAndVideo
-                            )
+
+                // ATTACHMENT MENU
+                Box {
+                    IconButton(
+                        onClick = {
+                            attachmentMenuExpanded = true
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "Add attachment",
+                            tint = colors.primary
                         )
                     }
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Choose photo or video",
-                        tint = colors.primary
-                    )
+
+                    DropdownMenu(
+                        expanded = attachmentMenuExpanded,
+                        onDismissRequest = {
+                            attachmentMenuExpanded = false
+                        }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Camera") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.CameraAlt,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                attachmentMenuExpanded = false
+                                launchCamera()
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Photos") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.PhotoLibrary,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                attachmentMenuExpanded = false
+
+                                mediaPicker.launch(
+                                    PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                                    )
+                                )
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Files") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.FolderOpen,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                attachmentMenuExpanded = false
+                                documentPicker.launch(arrayOf("*/*"))
+                            }
+                        )
+                    }
                 }
 
                 BasicTextField(
@@ -589,7 +780,10 @@ fun TutorScreen(
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 42.dp, max = 110.dp)
-                        .padding(horizontal = 7.dp, vertical = 10.dp),
+                        .padding(
+                            horizontal = 7.dp,
+                            vertical = 10.dp
+                        ),
                     textStyle = LocalTextStyle.current.copy(
                         color = colors.onSurface,
                         fontSize = 15.sp
@@ -603,16 +797,19 @@ fun TutorScreen(
                                     fontSize = 14.sp
                                 )
                             }
+
                             innerTextField()
                         }
                     }
                 )
 
+                // MICROPHONE
                 IconButton(
                     enabled = !transcribing,
                     onClick = {
                         if (recording) {
                             stopRecordingAndTranscribe()
+
                         } else if (
                             ContextCompat.checkSelfPermission(
                                 context,
@@ -620,6 +817,7 @@ fun TutorScreen(
                             ) == PackageManager.PERMISSION_GRANTED
                         ) {
                             startRecording()
+
                         } else {
                             microphonePermissionLauncher.launch(
                                 Manifest.permission.RECORD_AUDIO
@@ -635,12 +833,17 @@ fun TutorScreen(
                         )
                     } else {
                         VectorMicIcon(
-                            tint = if (recording) colors.error else colors.primary,
+                            tint = if (recording) {
+                                colors.error
+                            } else {
+                                colors.primary
+                            },
                             modifier = Modifier.size(25.dp)
                         )
                     }
                 }
 
+                // SEND
                 FilledIconButton(
                     onClick = ::sendMessage,
                     enabled = prompt.isNotBlank() &&
@@ -689,8 +892,14 @@ private fun VectorMicIcon(
 
         drawRoundRect(
             color = tint,
-            topLeft = Offset(size.width * 0.37f, size.height * 0.08f),
-            size = Size(size.width * 0.26f, size.height * 0.53f),
+            topLeft = Offset(
+                size.width * 0.37f,
+                size.height * 0.08f
+            ),
+            size = Size(
+                size.width * 0.26f,
+                size.height * 0.53f
+            ),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(
                 size.width * 0.14f
             )
@@ -701,23 +910,44 @@ private fun VectorMicIcon(
             startAngle = 0f,
             sweepAngle = 180f,
             useCenter = false,
-            topLeft = Offset(size.width * 0.20f, size.height * 0.28f),
-            size = Size(size.width * 0.60f, size.height * 0.53f),
-            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            topLeft = Offset(
+                size.width * 0.20f,
+                size.height * 0.28f
+            ),
+            size = Size(
+                size.width * 0.60f,
+                size.height * 0.53f
+            ),
+            style = Stroke(
+                width = strokeWidth,
+                cap = StrokeCap.Round
+            )
         )
 
         drawLine(
             color = tint,
-            start = Offset(size.width * 0.50f, size.height * 0.80f),
-            end = Offset(size.width * 0.50f, size.height * 0.94f),
+            start = Offset(
+                size.width * 0.50f,
+                size.height * 0.80f
+            ),
+            end = Offset(
+                size.width * 0.50f,
+                size.height * 0.94f
+            ),
             strokeWidth = strokeWidth,
             cap = StrokeCap.Round
         )
 
         drawLine(
             color = tint,
-            start = Offset(size.width * 0.34f, size.height * 0.94f),
-            end = Offset(size.width * 0.66f, size.height * 0.94f),
+            start = Offset(
+                size.width * 0.34f,
+                size.height * 0.94f
+            ),
+            end = Offset(
+                size.width * 0.66f,
+                size.height * 0.94f
+            ),
             strokeWidth = strokeWidth,
             cap = StrokeCap.Round
         )
@@ -745,13 +975,19 @@ private fun SuggestionCard(
             Modifier.padding(13.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Icon(icon, null, tint = colors.primary)
+            Icon(
+                icon,
+                null,
+                tint = colors.primary
+            )
+
             Text(
                 title,
                 color = colors.onSurface,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp
             )
+
             Text(
                 subtitle,
                 color = colors.onSurfaceVariant,
