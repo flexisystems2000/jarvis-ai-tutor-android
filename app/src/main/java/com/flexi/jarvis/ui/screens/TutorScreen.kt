@@ -1,10 +1,9 @@
-
 package com.flexi.jarvis.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.MediaRecorder
 import android.net.Uri
-import java.io.IOException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,13 +43,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.flexi.jarvis.data.model.ChatMessage
 import com.flexi.jarvis.data.repository.ConversationRepository
+import com.flexi.jarvis.network.SpeechTranscriptionApi
 import kotlinx.coroutines.launch
-import org.json.JSONObject
-import org.vosk.Model
-import org.vosk.Recognizer
-import org.vosk.android.RecognitionListener
-import org.vosk.android.SpeechService
-import org.vosk.android.StorageService
+import java.io.File
 
 @Composable
 fun TutorScreen(
@@ -59,6 +54,7 @@ fun TutorScreen(
     webSearch: Boolean,
     userId: String?,
     conversationRepository: ConversationRepository,
+    speechTranscriptionApi: SpeechTranscriptionApi,
     selectedConversationId: String?,
     onConversationOpened: (String) -> Unit,
     onNewConversation: () -> Unit,
@@ -72,213 +68,140 @@ fun TutorScreen(
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
+    var recording by remember { mutableStateOf(false) }
+    var transcribing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
-
     var selectedMedia by remember { mutableStateOf<Uri?>(null) }
 
-    // Offline speech recognition state.
-    var voskModel by remember { mutableStateOf<Model?>(null) }
-    var speechService by remember { mutableStateOf<SpeechService?>(null) }
-    var modelLoading by remember { mutableStateOf(true) }
-    var listening by remember { mutableStateOf(false) }
-    var partialTranscript by remember { mutableStateOf("") }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<File?>(null) }
 
-    // Android photo and video picker.
     val mediaPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         selectedMedia = uri
-
         if (uri != null) {
-            notice = "Media selected. Upload support is not connected yet."
+            notice = "Media selected. Media upload is not connected yet."
         }
     }
 
-    fun appendTranscript(spokenText: String) {
-        val cleanText = spokenText.trim()
-
+    fun appendTranscript(text: String) {
+        val cleanText = text.trim()
         if (cleanText.isNotEmpty()) {
             prompt = listOf(prompt.trim(), cleanText)
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
-
-            partialTranscript = ""
-            notice = null
+            notice = "Transcription added. Review or edit it before sending."
         }
     }
 
-    fun releaseSpeechService() {
-        runCatching {
-            speechService?.shutdown()
-        }
-
-        speechService = null
-        listening = false
-        partialTranscript = ""
-    }
-
-    fun stopSpeechRecognition() {
-        val activeService = speechService
-
-        if (activeService == null) {
-            listening = false
-            partialTranscript = ""
-            return
-        }
-
-        // stop() waits for Vosk's final result callback to be queued.
-        // Do not shut down the recorder here: the final callback still
-        // needs to be delivered to the main thread.
-        runCatching {
-            activeService.stop()
-        }.onFailure {
-            notice = it.message ?: "Unable to stop voice recognition."
-            releaseSpeechService()
-        }
-
-        listening = false
-        notice = "Finishing transcription..."
-    }
-
-    fun startSpeechRecognition() {
+    fun startRecording() {
         if (!languageCode.equals("en", ignoreCase = true)) {
-            notice = "Offline voice transcription currently supports English only."
+            notice = "Voice transcription currently supports English only."
             return
         }
 
-        val model = voskModel
+        if (recording || transcribing) return
 
-        if (model == null) {
-            notice = if (modelLoading) {
-                "Preparing offline voice recognition. Please wait."
-            } else {
-                "Offline voice recognition could not load."
-            }
-            return
-        }
-
-        if (listening) return
+        val outputFile = File(
+            context.cacheDir,
+            "jarvis-voice-${System.currentTimeMillis()}.m4a"
+        )
 
         try {
-            val recognizer = Recognizer(model, 16000.0f)
-            val service = SpeechService(recognizer, 16000.0f)
+            val newRecorder = MediaRecorder().apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(16_000)
+                setAudioEncodingBitRate(64_000)
+                setOutputFile(outputFile.absolutePath)
+                prepare()
+                start()
+            }
 
-            speechService = service
-            partialTranscript = ""
-            listening = true
-            notice = "Listening. Speak clearly, then tap the microphone to stop."
-
-            service.startListening(object : RecognitionListener {
-
-                override fun onPartialResult(hypothesis: String?) {
-                    val partial = runCatching {
-                        JSONObject(hypothesis ?: "{}")
-                            .optString("partial")
-                    }.getOrDefault("")
-
-                    partialTranscript = partial
-                }
-
-                override fun onResult(hypothesis: String?) {
-                    val spokenText = runCatching {
-                        JSONObject(hypothesis ?: "{}")
-                            .optString("text")
-                    }.getOrDefault("")
-
-                    if (spokenText.isNotBlank()) {
-                        appendTranscript(spokenText)
-                    }
-                }
-
-                override fun onFinalResult(hypothesis: String?) {
-                    val spokenText = runCatching {
-                        JSONObject(hypothesis ?: "{}")
-                            .optString("text")
-                    }.getOrDefault("")
-
-                    if (spokenText.isNotBlank()) {
-                        appendTranscript(spokenText)
-                    }
-
-                    // The final transcript has now been handled.
-                    releaseSpeechService()
-
-                    if (notice == "Finishing transcription...") {
-                        notice = null
-                    }
-                }
-
-                override fun onError(exception: Exception?) {
-                    releaseSpeechService()
-
-                    notice = exception?.message
-                        ?: "Voice recognition encountered an error."
-                }
-
-                override fun onTimeout() {
-                    releaseSpeechService()
-                    notice = null
-                }
-            })
+            recorder = newRecorder
+            recordingFile = outputFile
+            recording = true
+            notice = "Recording. Tap the microphone again when you finish speaking."
         } catch (error: Exception) {
-            releaseSpeechService()
-            notice = error.message
-                ?: "Unable to start offline voice recognition."
+            runCatching { outputFile.delete() }
+            runCatching { recorder?.release() }
+            recorder = null
+            recordingFile = null
+            recording = false
+            notice = error.message ?: "Unable to start microphone recording."
         }
     }
 
-    // Ask for microphone permission only when the user taps the mic.
+    fun stopRecordingAndTranscribe() {
+        val activeRecorder = recorder
+        val audioFile = recordingFile
+
+        if (activeRecorder == null || audioFile == null) {
+            recording = false
+            notice = "No active recording was found."
+            return
+        }
+
+        recording = false
+        recorder = null
+        recordingFile = null
+
+        val recordingStopped = runCatching {
+            activeRecorder.stop()
+        }.isSuccess
+
+        runCatching {
+            activeRecorder.reset()
+            activeRecorder.release()
+        }
+
+        if (!recordingStopped || !audioFile.exists() || audioFile.length() == 0L) {
+            audioFile.delete()
+            notice = "The recording was too short or could not be saved. Please try again."
+            return
+        }
+
+        scope.launch {
+            transcribing = true
+            notice = "Uploading audio and transcribing..."
+
+            try {
+                val transcript = speechTranscriptionApi.transcribe(audioFile)
+                appendTranscript(transcript)
+            } catch (error: Exception) {
+                notice = error.message ?: "Voice transcription failed. Please try again."
+            } finally {
+                audioFile.delete()
+                transcribing = false
+            }
+        }
+    }
+
     val microphonePermissionLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
         ) { granted ->
             if (granted) {
-                startSpeechRecognition()
+                startRecording()
             } else {
-                notice = "Microphone permission is needed for voice input."
+                notice = "Microphone permission is required for voice input."
             }
         }
 
-    // Load the bundled English Vosk model.
-    LaunchedEffect(Unit) {
-        modelLoading = true
-
-        StorageService.unpack(
-            context.applicationContext,
-            "model-en-us",
-            "model",
-            object : StorageService.Callback<Model> {
-                override fun onComplete(model: Model) {
-                    voskModel = model
-                    modelLoading = false
-                    notice = null
-                }
-            },
-            object : StorageService.Callback<IOException> {
-                override fun onComplete(exception: IOException) {
-                    modelLoading = false
-                    notice = "Offline voice model could not be loaded: " +
-                        (exception.message ?: "Unknown error")
-                }
-            }
-        )
-    }
-
-    // Release microphone and model resources when leaving this screen.
     DisposableEffect(Unit) {
         onDispose {
             runCatching {
-                speechService?.stop()
-                speechService?.shutdown()
-                voskModel?.close()
+                recorder?.reset()
+                recorder?.release()
             }
-
-            speechService = null
-            voskModel = null
+            recorder = null
+            recordingFile?.delete()
+            recordingFile = null
         }
     }
 
-    // Load the selected conversation.
     LaunchedEffect(userId, selectedConversationId) {
         messages = emptyList()
         notice = null
@@ -294,8 +217,7 @@ fun TutorScreen(
             }.onSuccess {
                 messages = it
             }.onFailure {
-                notice = it.message
-                    ?: "Unable to load this conversation."
+                notice = it.message ?: "Unable to load this conversation."
             }
 
             loading = false
@@ -306,15 +228,11 @@ fun TutorScreen(
         val cleanPrompt = prompt.trim()
         val owner = userId
 
-        if (cleanPrompt.isEmpty() || sending) return
+        if (cleanPrompt.isEmpty() || sending || recording || transcribing) return
 
         if (owner.isNullOrBlank()) {
             notice = "Sign in to save conversations to your account."
             return
-        }
-
-        if (listening) {
-            stopSpeechRecognition()
         }
 
         scope.launch {
@@ -322,15 +240,11 @@ fun TutorScreen(
             notice = null
 
             runCatching {
-                // Confirm that the selected conversation belongs
-                // to the currently signed-in account.
                 val ownedConversation = selectedConversationId?.let { id ->
                     conversationRepository.list(owner)
                         .firstOrNull { it.id == id }
                 }
 
-                // Create a new conversation if the selected one
-                // does not belong to this account.
                 val conversationId = ownedConversation?.id
                     ?: conversationRepository.create(
                         owner,
@@ -351,7 +265,6 @@ fun TutorScreen(
             }.onSuccess { updatedMessages ->
                 messages = updatedMessages
                 prompt = ""
-                partialTranscript = ""
                 onUsage()
 
                 if (selectedMedia != null) {
@@ -382,7 +295,6 @@ fun TutorScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 19.sp
                 )
-
                 Text(
                     "Your intelligent learning companion",
                     color = colors.onSurfaceVariant,
@@ -391,7 +303,7 @@ fun TutorScreen(
             }
 
             IconButton(onClick = {
-                if (listening) stopSpeechRecognition()
+                if (recording) stopRecordingAndTranscribe()
                 onNewConversation()
             }) {
                 Icon(
@@ -436,9 +348,7 @@ fun TutorScreen(
                         )
                         .padding(20.dp)
                 ) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
                             "YOUR AI STUDY PARTNER",
                             color = colors.onPrimaryContainer,
@@ -446,7 +356,6 @@ fun TutorScreen(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.5.sp
                         )
-
                         Text(
                             "What would you\nlike to learn today?",
                             color = colors.onPrimaryContainer,
@@ -454,7 +363,6 @@ fun TutorScreen(
                             lineHeight = 33.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-
                         Text(
                             "Ask questions, understand difficult topics and practise at your pace.",
                             color = colors.onPrimaryContainer,
@@ -475,9 +383,7 @@ fun TutorScreen(
 
                 Spacer(Modifier.height(10.dp))
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SuggestionCard(
                         "Study a topic",
                         "Step-by-step lessons",
@@ -508,10 +414,7 @@ fun TutorScreen(
                         onClick = { prompt = suggestion },
                         color = colors.surface,
                         shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            colors.outlineVariant
-                        ),
+                        border = BorderStroke(1.dp, colors.outlineVariant),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
@@ -526,9 +429,7 @@ fun TutorScreen(
                                 tint = colors.primary,
                                 modifier = Modifier.size(18.dp)
                             )
-
                             Spacer(Modifier.width(10.dp))
-
                             Text(
                                 suggestion,
                                 color = colors.onSurface,
@@ -573,9 +474,7 @@ fun TutorScreen(
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
-
                                 Spacer(Modifier.height(5.dp))
-
                                 Text(
                                     message.content,
                                     color = colors.onSurface,
@@ -588,20 +487,14 @@ fun TutorScreen(
             }
         }
 
-        if (loading) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth(),
-                color = colors.primary
-            )
-        }
-
-        notice?.let {
+        if (notice != null) {
             Text(
-                it,
+                notice!!,
                 color = if (
-                    it.startsWith("Listening") ||
-                    it.startsWith("Media selected") ||
-                    it.startsWith("Finishing")
+                    notice!!.startsWith("Recording") ||
+                    notice!!.startsWith("Uploading") ||
+                    notice!!.startsWith("Transcription added") ||
+                    notice!!.startsWith("Media selected")
                 ) colors.primary else colors.error,
                 fontSize = 11.sp,
                 modifier = Modifier
@@ -619,7 +512,6 @@ fun TutorScreen(
             )
         }
 
-        // Selected photo/video preview.
         selectedMedia?.let { uri ->
             Surface(
                 color = colors.secondaryContainer,
@@ -629,10 +521,7 @@ fun TutorScreen(
                     .padding(bottom = 7.dp)
             ) {
                 Row(
-                    Modifier.padding(
-                        horizontal = 12.dp,
-                        vertical = 8.dp
-                    ),
+                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -640,19 +529,15 @@ fun TutorScreen(
                         contentDescription = null,
                         tint = colors.onSecondaryContainer
                     )
-
                     Spacer(Modifier.width(8.dp))
-
                     Text(
-                        uri.lastPathSegment
-                            ?.substringAfterLast('/')
+                        uri.lastPathSegment?.substringAfterLast('/')
                             ?: "Selected media",
                         color = colors.onSecondaryContainer,
                         fontSize = 12.sp,
                         modifier = Modifier.weight(1f),
                         maxLines = 1
                     )
-
                     IconButton(
                         onClick = { selectedMedia = null },
                         modifier = Modifier.size(30.dp)
@@ -667,7 +552,6 @@ fun TutorScreen(
             }
         }
 
-        // Chat composer.
         Surface(
             color = colors.surface,
             shape = RoundedCornerShape(26.dp),
@@ -700,54 +584,42 @@ fun TutorScreen(
                 }
 
                 BasicTextField(
-                    value = prompt + partialTranscript.let {
-                        if (it.isNotBlank()) {
-                            (if (prompt.isBlank()) "" else " ") + it
-                        } else {
-                            ""
-                        }
-                    },
-                    onValueChange = {
-                        prompt = it
-                        partialTranscript = ""
-                    },
+                    value = prompt,
+                    onValueChange = { prompt = it },
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 42.dp, max = 110.dp)
-                        .padding(
-                            horizontal = 7.dp,
-                            vertical = 10.dp
-                        ),
+                        .padding(horizontal = 7.dp, vertical = 10.dp),
                     textStyle = LocalTextStyle.current.copy(
                         color = colors.onSurface,
                         fontSize = 15.sp
                     ),
                     decorationBox = { innerTextField ->
                         Box {
-                            if (prompt.isBlank() && partialTranscript.isBlank()) {
+                            if (prompt.isBlank()) {
                                 Text(
                                     "Ask JARVIS anything...",
                                     color = colors.onSurfaceVariant,
                                     fontSize = 14.sp
                                 )
                             }
-
                             innerTextField()
                         }
                     }
                 )
 
                 IconButton(
+                    enabled = !transcribing,
                     onClick = {
-                        if (listening) {
-                            stopSpeechRecognition()
+                        if (recording) {
+                            stopRecordingAndTranscribe()
                         } else if (
                             ContextCompat.checkSelfPermission(
                                 context,
                                 Manifest.permission.RECORD_AUDIO
                             ) == PackageManager.PERMISSION_GRANTED
                         ) {
-                            startSpeechRecognition()
+                            startRecording()
                         } else {
                             microphonePermissionLauncher.launch(
                                 Manifest.permission.RECORD_AUDIO
@@ -755,7 +627,7 @@ fun TutorScreen(
                         }
                     }
                 ) {
-                    if (modelLoading && !listening) {
+                    if (transcribing) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(21.dp),
                             strokeWidth = 2.dp,
@@ -763,11 +635,7 @@ fun TutorScreen(
                         )
                     } else {
                         VectorMicIcon(
-                            tint = if (listening) {
-                                colors.error
-                            } else {
-                                colors.primary
-                            },
+                            tint = if (recording) colors.error else colors.primary,
                             modifier = Modifier.size(25.dp)
                         )
                     }
@@ -775,7 +643,10 @@ fun TutorScreen(
 
                 FilledIconButton(
                     onClick = ::sendMessage,
-                    enabled = prompt.isNotBlank() && !sending,
+                    enabled = prompt.isNotBlank() &&
+                        !sending &&
+                        !recording &&
+                        !transcribing,
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = colors.primary,
                         contentColor = colors.onPrimary
@@ -818,14 +689,8 @@ private fun VectorMicIcon(
 
         drawRoundRect(
             color = tint,
-            topLeft = Offset(
-                size.width * 0.37f,
-                size.height * 0.08f
-            ),
-            size = Size(
-                size.width * 0.26f,
-                size.height * 0.53f
-            ),
+            topLeft = Offset(size.width * 0.37f, size.height * 0.08f),
+            size = Size(size.width * 0.26f, size.height * 0.53f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(
                 size.width * 0.14f
             )
@@ -836,44 +701,23 @@ private fun VectorMicIcon(
             startAngle = 0f,
             sweepAngle = 180f,
             useCenter = false,
-            topLeft = Offset(
-                size.width * 0.20f,
-                size.height * 0.28f
-            ),
-            size = Size(
-                size.width * 0.60f,
-                size.height * 0.53f
-            ),
-            style = Stroke(
-                width = strokeWidth,
-                cap = StrokeCap.Round
-            )
+            topLeft = Offset(size.width * 0.20f, size.height * 0.28f),
+            size = Size(size.width * 0.60f, size.height * 0.53f),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
         )
 
         drawLine(
             color = tint,
-            start = Offset(
-                size.width * 0.50f,
-                size.height * 0.80f
-            ),
-            end = Offset(
-                size.width * 0.50f,
-                size.height * 0.94f
-            ),
+            start = Offset(size.width * 0.50f, size.height * 0.80f),
+            end = Offset(size.width * 0.50f, size.height * 0.94f),
             strokeWidth = strokeWidth,
             cap = StrokeCap.Round
         )
 
         drawLine(
             color = tint,
-            start = Offset(
-                size.width * 0.34f,
-                size.height * 0.94f
-            ),
-            end = Offset(
-                size.width * 0.66f,
-                size.height * 0.94f
-            ),
+            start = Offset(size.width * 0.34f, size.height * 0.94f),
+            end = Offset(size.width * 0.66f, size.height * 0.94f),
             strokeWidth = strokeWidth,
             cap = StrokeCap.Round
         )
@@ -902,14 +746,12 @@ private fun SuggestionCard(
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             Icon(icon, null, tint = colors.primary)
-
             Text(
                 title,
                 color = colors.onSurface,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp
             )
-
             Text(
                 subtitle,
                 color = colors.onSurfaceVariant,
