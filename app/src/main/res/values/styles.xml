@@ -1,0 +1,22 @@
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.Jarvis.Starting"
+        parent="Theme.SplashScreen">
+
+        <item name="windowSplashScreenBackground">#080B12</item>
+
+        <item name="windowSplashScreenAnimatedIcon">
+            @drawable/ic_jarvis_mark
+        </item>
+
+        <item name="windowSplashScreenAnimationDuration">500</item>
+
+        <item name="postSplashScreenTheme">
+            @android:style/Theme.Material.NoActionBar
+        </item>
+
+    </style>
+
+</resources>
