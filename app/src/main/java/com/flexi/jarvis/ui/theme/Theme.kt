@@ -1,28 +1,35 @@
 package com.flexi.jarvis.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import com.flexi.jarvis.data.model.AppTheme
 
-private val LightColors = lightColorScheme(
-    primary = FlexiBlue,
-    secondary = FlexiGold,
-    background = LightBackground
+private val JarvisDarkColors = darkColorScheme(
+    primary = JarvisBlue,
+    onPrimary = Color.White,
+    secondary = JarvisGreen,
+    onSecondary = Color.White,
+    background = JarvisBackground,
+    onBackground = JarvisTextPrimary,
+    surface = JarvisSurface,
+    onSurface = JarvisTextPrimary,
+    surfaceVariant = JarvisSurfaceVariant,
+    onSurfaceVariant = JarvisTextSecondary,
+    outline = JarvisOutline,
+    error = Color(0xFFFF6B78)
 )
-private val DarkColors = darkColorScheme(primary = FlexiGold, secondary = FlexiBlue)
 
 @Composable
-fun JarvisTheme(theme: AppTheme = AppTheme.SYSTEM, content: @Composable () -> Unit) {
-    val useDarkTheme = when (theme) {
-        AppTheme.SYSTEM -> isSystemInDarkTheme()
-        AppTheme.LIGHT -> false
-        AppTheme.DARK -> true
-    }
+fun JarvisTheme(
+    theme: AppTheme = AppTheme.DARK,
+    content: @Composable () -> Unit
+) {
+    // JARVIS uses its dark brand interface consistently. The saved preference
+    // is retained for compatibility; light-theme support can be added later.
     MaterialTheme(
-        colorScheme = if (useDarkTheme) DarkColors else LightColors,
+        colorScheme = JarvisDarkColors,
         content = content
     )
 }
