@@ -27,6 +27,9 @@ import com.flexi.jarvis.data.model.Account
 import com.flexi.jarvis.data.model.AccountType
 import com.flexi.jarvis.data.model.AppPreferences
 import com.flexi.jarvis.data.repository.DataStorePreferencesRepository
+import com.flexi.jarvis.data.repository.ConversationRepository
+import com.flexi.jarvis.data.repository.CloudPreferencesRepository
+import com.flexi.jarvis.network.SupabaseBackendApi
 import com.flexi.jarvis.data.repository.SupabaseAccountRepository
 import com.flexi.jarvis.ui.screens.AccountScreen
 import com.flexi.jarvis.ui.screens.CbtScreen
@@ -67,6 +70,11 @@ fun JarvisApp() {
     val preferencesRepository = remember { DataStorePreferencesRepository(context) }
     val preferences by preferencesRepository.preferences.collectAsState(initial = AppPreferences())
     val accountRepository = remember { SupabaseAccountRepository(JarvisApplication.supabase) }
+    val backendApi = remember { SupabaseBackendApi(JarvisApplication.supabase) }
+    val conversationRepository = remember(backendApi) { ConversationRepository(backendApi) }
+    val cloudPreferencesRepository = remember(backendApi, preferencesRepository) {
+        CloudPreferencesRepository(preferencesRepository, backendApi)
+    }
 
     var account by remember { mutableStateOf<Account?>(null) }
     var accountLoading by remember { mutableStateOf(true) }
@@ -74,6 +82,7 @@ fun JarvisApp() {
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var selectedTab by remember { mutableStateOf(AppTab.TUTOR) }
     var historyExpanded by remember { mutableStateOf(false) }
+    var selectedConversationId by remember { mutableStateOf<String?>(null) }
     var usedToday by remember { mutableIntStateOf(0) }
 
     fun reportError(error: Throwable) {
@@ -114,6 +123,12 @@ fun JarvisApp() {
                 else -> accountLoading = false
             }
         }
+    }
+
+    LaunchedEffect(account?.id) {
+        val signedInUserId = account?.id ?: return@LaunchedEffect
+        runCatching { cloudPreferencesRepository.syncFromCloud(signedInUserId) }
+            .onFailure(::reportError)
     }
 
     fun runAccountAction(action: suspend () -> Result<Account>) {
@@ -211,7 +226,7 @@ fun JarvisApp() {
                             Text("All conversations", color = JarvisTextSecondary, fontSize = 13.sp)
                         }
                         Text(
-                            "Saved chats will appear here when conversation sync is connected.",
+                            "Open your saved conversations or start a new chat.",
                             color = JarvisTextSecondary,
                             fontSize = 10.sp,
                             lineHeight = 14.sp,
@@ -276,10 +291,22 @@ fun JarvisApp() {
                             tutorName = preferences.tutorName,
                             languageCode = preferences.languageCode,
                             webSearch = preferences.webSearchEnabled,
+                            userId = account?.id,
+                            conversationRepository = conversationRepository,
+                            selectedConversationId = selectedConversationId,
+                            onConversationOpened = { selectedConversationId = it },
+                            onNewConversation = { selectedConversationId = null },
                             onUsage = { usedToday++ }
                         )
                         AppTab.CBT -> CbtScreen()
-                        AppTab.HISTORY -> HistoryScreen()
+                        AppTab.HISTORY -> HistoryScreen(
+                            userId = account?.id,
+                            repository = conversationRepository,
+                            onOpenConversation = { conversationId ->
+                                selectedConversationId = conversationId
+                                selectedTab = AppTab.TUTOR
+                            }
+                        )
                         AppTab.PLANS -> PlansScreen(
                             accountType = account?.type ?: AccountType.FREE,
                             usedToday = usedToday,
@@ -293,7 +320,7 @@ fun JarvisApp() {
                             preferences = preferences,
                             onSave = { updated ->
                                 scope.launch {
-                                    runCatching { preferencesRepository.save(updated) }
+                                    runCatching { cloudPreferencesRepository.save(account?.id, updated) }
                                         .onFailure(::reportError)
                                 }
                             }
