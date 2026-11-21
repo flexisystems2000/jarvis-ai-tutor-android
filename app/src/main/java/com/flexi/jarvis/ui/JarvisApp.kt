@@ -153,8 +153,13 @@ fun JarvisApp() {
         }
     }
 
+    // Clear the selected conversation whenever the account changes.
+    // This prevents a previous user's conversation ID from being reused.
     LaunchedEffect(account?.id) {
-        val signedInUserId = account?.id ?: return@LaunchedEffect
+        selectedConversationId = null
+
+        val signedInUserId = account?.id
+            ?: return@LaunchedEffect
 
         runCatching {
             cloudPreferencesRepository.syncFromCloud(signedInUserId)
@@ -556,9 +561,6 @@ fun JarvisApp() {
                         AppTab.SETTINGS -> SettingsScreen(
                             preferences = preferences,
                             onSave = { updated ->
-                                // Save locally and sync to Supabase when signed in.
-                                // This is a suspend call, so SettingsScreen can
-                                // display the actual save result.
                                 cloudPreferencesRepository.save(
                                     account?.id,
                                     updated
