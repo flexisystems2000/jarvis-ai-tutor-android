@@ -1,4 +1,3 @@
-
 import java.util.Properties
 
 plugins {
@@ -23,6 +22,14 @@ val supabasePublishableKey = localProperties.getProperty(
     "SUPABASE_PUBLISHABLE_KEY",
     "YOUR_SUPABASE_PUBLISHABLE_KEY"
 )
+
+val speechApiUrl = localProperties.getProperty("SPEECH_API_URL")
+    ?: System.getenv("SPEECH_API_URL")
+    ?: ""
+
+val escapedSpeechApiUrl = speechApiUrl
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
 
 val releaseStoreFile = file("keystore/jarvis-release.jks")
 val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
@@ -62,6 +69,12 @@ android {
             "String",
             "SUPABASE_PUBLISHABLE_KEY",
             "\"$supabasePublishableKey\""
+        )
+
+        buildConfigField(
+            "String",
+            "SPEECH_API_URL",
+            "\"$escapedSpeechApiUrl\""
         )
 
         buildConfigField(
@@ -120,9 +133,7 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.android)
 
-    // Fully offline English speech recognition.
-    implementation("com.alphacephei:vosk-android:0.3.75")
-
+    // Supabase authentication and HTTP client.
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.auth)
     implementation(libs.ktor.client.android)
