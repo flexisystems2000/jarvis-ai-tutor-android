@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import com.flexi.jarvis.BuildConfig
 import com.flexi.jarvis.JarvisApplication
 import com.flexi.jarvis.R
 import com.flexi.jarvis.auth.GoogleCredentialManager
@@ -29,6 +30,7 @@ import com.flexi.jarvis.data.model.AppPreferences
 import com.flexi.jarvis.data.repository.DataStorePreferencesRepository
 import com.flexi.jarvis.data.repository.ConversationRepository
 import com.flexi.jarvis.data.repository.CloudPreferencesRepository
+import com.flexi.jarvis.network.SpeechTranscriptionApi
 import com.flexi.jarvis.network.SupabaseBackendApi
 import com.flexi.jarvis.data.repository.SupabaseAccountRepository
 import com.flexi.jarvis.ui.screens.AccountScreen
@@ -79,6 +81,17 @@ fun JarvisApp() {
 
     val conversationRepository = remember(backendApi) {
         ConversationRepository(backendApi)
+    }
+
+    // Online speech transcription client.
+    // The signed-in user's Supabase access token is sent with each recording.
+    val speechTranscriptionApi = remember {
+        SpeechTranscriptionApi(
+            baseUrl = BuildConfig.SPEECH_API_URL,
+            accessTokenProvider = {
+                JarvisApplication.supabase.auth.currentAccessTokenOrNull()
+            }
+        )
     }
 
     val cloudPreferencesRepository = remember(
@@ -524,6 +537,7 @@ fun JarvisApp() {
                             webSearch = preferences.webSearchEnabled,
                             userId = account?.id,
                             conversationRepository = conversationRepository,
+                            speechTranscriptionApi = speechTranscriptionApi,
                             selectedConversationId = selectedConversationId,
                             onConversationOpened = {
                                 selectedConversationId = it
