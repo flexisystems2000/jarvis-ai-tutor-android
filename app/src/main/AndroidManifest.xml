@@ -7,8 +7,8 @@
         android:name=".JarvisApplication"
         android:allowBackup="true"
         android:label="JARVIS AI"
-        android:icon="@drawable/ic_jarvis_mark"
-        android:roundIcon="@drawable/ic_jarvis_mark"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.Jarvis.Starting">
 
