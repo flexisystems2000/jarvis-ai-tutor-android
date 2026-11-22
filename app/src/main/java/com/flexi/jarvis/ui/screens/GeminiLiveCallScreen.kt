@@ -102,7 +102,7 @@ fun GeminiLiveCallScreen(
     var jarvisTurn by remember { mutableStateOf("") }
     var audioLevel by remember { mutableFloatStateOf(0f) }
     var outputDevice by remember { mutableStateOf("Phone speaker") }
-    var volume by remember { mutableFloatStateOf(1f) }
+    var volume by remember { mutableFloatStateOf(currentVolume) }
     var showVolume by remember { mutableStateOf(false) }
 
     val previousAudioMode = remember { audioManager.mode }
