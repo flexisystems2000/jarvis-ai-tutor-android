@@ -77,6 +77,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -100,6 +102,7 @@ fun GeminiLiveCallScreen(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -110,6 +113,7 @@ fun GeminiLiveCallScreen(
     var muted by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Your private, real-time conversation with JARVIS.") }
     var error by remember { mutableStateOf<String?>(null) }
+    var diagnostics by remember { mutableStateOf(listOf("Live diagnostics ready.")) }
     var userTurn by remember { mutableStateOf("") }
     var jarvisTurn by remember { mutableStateOf("") }
     var audioLevel by remember { mutableFloatStateOf(0f) }
@@ -211,15 +215,21 @@ fun GeminiLiveCallScreen(
         connecting = true
         playCallTone(ToneGenerator.TONE_SUP_RINGTONE, 900L)
         error = null
+        diagnostics = listOf("Starting JARVIS Live connection.", "Requesting a short-lived Gemini Live token from the secure service.")
         status = "Connecting securely to JARVIS..."
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         refreshAudioRoute()
         scope.launch {
             runCatching { tokenApi.create(tutorName, languageCode) }
                 .onSuccess { liveToken ->
+                    diagnostics = diagnostics + "Temporary token received. Model: ${liveToken.model}; API: ${liveToken.apiVersion}. Token value hidden."
                     val live = GeminiLiveSession(context, liveToken, object : GeminiLiveSession.Listener {
+                        override fun onDiagnostic(message: String) {
+                            mainHandler.post { diagnostics = (diagnostics + message).takeLast(30) }
+                        }
                         override fun onConnected() {
                             mainHandler.post {
+                                diagnostics = (diagnostics + "Live session established; microphone starting.").takeLast(30)
                                 connecting = false
                                 connected = true
                                 status = "Listening — speak naturally. You can interrupt JARVIS."
@@ -284,7 +294,9 @@ fun GeminiLiveCallScreen(
                 }
                 .onFailure {
                     connecting = false
-                    error = it.message ?: "Could not start the Live call."
+                    val detail = "${it.javaClass.simpleName}: ${(it.message ?: "no error message").take(300)}"
+                    diagnostics = (diagnostics + "Token request failed: $detail").takeLast(30)
+                    error = detail
                     status = "Connection failed."
                 }
         }
@@ -499,6 +511,26 @@ fun GeminiLiveCallScreen(
 
         error?.let {
             Text(it, color = Color(0xFFFF8A8A), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+
+        if (error != null || diagnostics.size > 1) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.07f))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("CONNECTION DIAGNOSTICS", color = JarvisPurple, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { clipboard.setText(AnnotatedString(diagnostics.joinToString("\n"))) }) {
+                            Text("Copy diagnostics", color = Color(0xFFD8C5FF), fontSize = 11.sp)
+                        }
+                    }
+                    diagnostics.takeLast(6).forEach { line ->
+                        Text("• $line", color = Color(0xFFD6CCEA), fontSize = 10.sp)
+                    }
+                    Text("Diagnostic report excludes temporary tokens and authorization credentials.", color = Color.Gray, fontSize = 9.sp)
+                }
+            }
         }
 
         if (showVolume) {
