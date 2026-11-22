@@ -232,6 +232,12 @@ async function handleLive(request,env,user,log,json) {
   server.accept();
   upstream.accept();
   let ready=false, ended=false;
+  const setupTimer=setTimeout(()=>{
+    if(!ready&&!ended){
+      sendClient({type:"error",message:"Cloudflare could not complete the live session setup within 20 seconds."});
+      closeBoth(1011,"Live setup timeout");
+    }
+  },20000);
   const sendClient=(payload)=>{
     if(ended||server.readyState!==WebSocket.OPEN) return;
     try { server.send(JSON.stringify(payload)); } catch {}
@@ -239,6 +245,7 @@ async function handleLive(request,env,user,log,json) {
   const closeBoth=(code=1000,reason="Session ended")=>{
     if(ended) return;
     ended=true;
+    clearTimeout(setupTimer);
     try { upstream.close(code,reason.slice(0,120)); } catch {}
     try { server.close(code,reason.slice(0,120)); } catch {}
   };
@@ -252,7 +259,7 @@ async function handleLive(request,env,user,log,json) {
         closeBoth(1011,"Provider session rejected"); return;
       }
       if(root.setupComplete) {
-        ready=true; sendClient({type:"ready"});
+        ready=true; clearTimeout(setupTimer); sendClient({type:"ready"});
         log("info","live_setup_complete",{requestId,model:"gemini-3.8-live"});
       }
       const content=root.serverContent||{};
