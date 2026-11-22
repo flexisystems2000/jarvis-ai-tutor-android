@@ -120,7 +120,7 @@ fun JarvisApp() {
     val liveSessionApi = remember {
         LiveSessionApi(
             baseUrl = BuildConfig.SPEECH_API_URL,
-            accessToken = {
+            accessTokenProvider = {
                 JarvisApplication.supabase.auth.currentAccessTokenOrNull()
             }
         )
