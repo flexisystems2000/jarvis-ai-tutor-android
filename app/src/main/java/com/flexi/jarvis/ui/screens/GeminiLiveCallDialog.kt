@@ -58,8 +58,8 @@ fun GeminiLiveCallDialog(
         status = "Connecting securely to JARVIS..."
         scope.launch {
             runCatching { liveApi.create(tutorName, languageCode) }
-                .onSuccess { liveToken ->
-                    val live = LiveSessionClient(context, liveToken, object : LiveSessionClient.Listener {
+                .onSuccess { liveConfig ->
+                    val live = LiveSessionClient(context, liveConfig, object : LiveSessionClient.Listener {
                         override fun onConnected() = mainHandler.post {
                             connecting = false
                             connected = true
