@@ -9,7 +9,9 @@ import java.net.URL
 data class GeminiLiveToken(
     val token: String,
     val model: String,
-    val apiVersion: String
+    val apiVersion: String,
+    val tutorName: String = "JARVIS",
+    val language: String = "English"
 )
 
 class GeminiLiveTokenApi(
@@ -47,7 +49,9 @@ class GeminiLiveTokenApi(
                 GeminiLiveToken(
                     token = token,
                     model = json.optString("model", "gemini-3.1-flash-live-preview"),
-                    apiVersion = json.optString("apiVersion", "v1alpha")
+                    apiVersion = json.optString("apiVersion", "v1alpha"),
+                    tutorName = json.optString("tutorName", tutorName),
+                    language = json.optString("language", language)
                 )
             } finally {
                 connection.disconnect()
