@@ -223,7 +223,7 @@ fun GeminiLiveCallScreen(
             runCatching { liveApi.create(tutorName, languageCode) }
                 .onSuccess { liveToken ->
                     diagnostics = diagnostics + "Cloudflare connection configuration received; provider credentials remain server-side."
-                    val live = GeminiLiveSession(context, liveToken, object : GeminiLiveSession.Listener {
+                    val live = LiveSessionClient(context, liveToken, object : LiveSessionClient.Listener {
                         override fun onDiagnostic(message: String) {
                             mainHandler.post { diagnostics = (diagnostics + message).takeLast(30) }
                         }
