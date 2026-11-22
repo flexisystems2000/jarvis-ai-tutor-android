@@ -519,9 +519,6 @@ fun GeminiLiveCallScreen(
                 factory = { previewView },
                 modifier = Modifier.fillMaxWidth().height(190.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             )
-            TextButton(onClick = { cameraPublisher?.switchCamera() }) {
-                Text("Switch front / rear camera", color = Color(0xFFD8C5FF))
-            }
         }
         Text(status, color = Color(0xFFB9AFC8), fontSize = 12.sp)
 
@@ -676,6 +673,13 @@ fun GeminiLiveCallScreen(
             ) { Text("Start voice call") }
         } else if (connecting) {
             Text("Securing your connection...", color = Color(0xFFC9B7E8), fontSize = 12.sp)
+        }
+        Button(
+            onClick = { cameraPublisher?.switchCamera() },
+            enabled = cameraEnabled && connected,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        ) {
+            Text("Flip front / rear camera")
         }
         Spacer(Modifier.height(18.dp))
     }
