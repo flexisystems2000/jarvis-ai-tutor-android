@@ -110,6 +110,7 @@ fun GeminiLiveCallScreen(
     var session by remember { mutableStateOf<LiveSessionClient?>(null) }
     var connecting by remember { mutableStateOf(false) }
     var connected by remember { mutableStateOf(false) }
+    var assistantSpeaking by remember { mutableStateOf(false) }
     var muted by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Your private, real-time conversation with JARVIS.") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -118,7 +119,7 @@ fun GeminiLiveCallScreen(
     var jarvisTurn by remember { mutableStateOf("") }
     var audioLevel by remember { mutableFloatStateOf(0f) }
     var outputDevice by remember { mutableStateOf("Phone speaker") }
-    var volume by remember { mutableFloatStateOf(1f) }
+    var volume by remember { mutableFloatStateOf(currentVolume) }
     var showVolume by remember { mutableStateOf(false) }
     var callEnded by remember { mutableStateOf(false) }
     var aiEndCallHandled by remember { mutableStateOf(false) }
@@ -145,6 +146,7 @@ fun GeminiLiveCallScreen(
     }
 
     val previousAudioMode = remember { audioManager.mode }
+    val previousSpeakerphoneOn = remember { audioManager.isSpeakerphoneOn }
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL).coerceAtLeast(1) }
     val minVolume = remember { if (android.os.Build.VERSION.SDK_INT >= 28) audioManager.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL) else 0 }
     val currentVolume = remember {
@@ -186,6 +188,7 @@ fun GeminiLiveCallScreen(
         onDispose {
             audioManager.unregisterAudioDeviceCallback(deviceCallback)
             audioManager.mode = previousAudioMode
+            audioManager.isSpeakerphoneOn = previousSpeakerphoneOn
             session?.close()
             session = null
         }
@@ -207,6 +210,7 @@ fun GeminiLiveCallScreen(
         connected = false
         connecting = false
         audioManager.mode = previousAudioMode
+        audioManager.isSpeakerphoneOn = previousSpeakerphoneOn
         onDismiss()
     }
 
@@ -219,6 +223,8 @@ fun GeminiLiveCallScreen(
         status = "Connecting securely to JARVIS..."
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         refreshAudioRoute()
+        val hasPrivateOutput = outputDevice == "Bluetooth audio" || outputDevice == "Wired earphones"
+        if (!hasPrivateOutput) audioManager.isSpeakerphoneOn = true
         scope.launch {
             runCatching { liveApi.create(tutorName, languageCode) }
                 .onSuccess { liveConfig ->
@@ -232,7 +238,8 @@ fun GeminiLiveCallScreen(
                                 diagnostics = (diagnostics + "Live session established; microphone starting.").takeLast(30)
                                 connecting = false
                                 connected = true
-                                status = "Listening — speak naturally. You can interrupt JARVIS."
+                                assistantSpeaking = false
+                                status = "Live conversation • Speak naturally."
                                 session?.startMicrophone()
                             }
                         }
@@ -255,7 +262,10 @@ fun GeminiLiveCallScreen(
                             }
                         }
                         override fun onOutputTranscript(text: String) {
-                            mainHandler.post { jarvisTurn = (jarvisTurn + " " + text).trim() }
+                            mainHandler.post {
+                                assistantSpeaking = true
+                                jarvisTurn = (jarvisTurn + " " + text).trim()
+                            }
                         }
                         override fun onAudioLevel(level: Float) {
                             mainHandler.post { audioLevel = level.coerceIn(0f, 1f) }
@@ -269,10 +279,15 @@ fun GeminiLiveCallScreen(
                                 }
                                 userTurn = ""
                                 jarvisTurn = ""
+                                assistantSpeaking = false
+                                status = "Live conversation • Speak naturally."
                             }
                         }
                         override fun onInterrupted() {
-                            mainHandler.post { status = "JARVIS was interrupted. Go ahead." }
+                            mainHandler.post {
+                                assistantSpeaking = false
+                                status = "Live conversation • Speak naturally."
+                            }
                         }
                         override fun onError(message: String) {
                             mainHandler.post {
@@ -468,8 +483,9 @@ fun GeminiLiveCallScreen(
         Text(
             when {
                 connecting -> "Connecting..."
+                connected && assistantSpeaking -> "JARVIS is speaking"
                 connected && audioLevel > 0.08f -> "Listening to you"
-                connected -> "Connected"
+                connected -> "Listening • Ready when you are"
                 else -> "Voice conversation"
             },
             color = Color(0xFFC9B7E8),
@@ -513,7 +529,7 @@ fun GeminiLiveCallScreen(
             Text(it, color = Color(0xFFFF8A8A), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
         }
 
-        if (error != null || diagnostics.size > 1) {
+        if (error != null) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.07f))
