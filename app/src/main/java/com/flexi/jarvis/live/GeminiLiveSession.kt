@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.os.SystemClock
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.util.Base64
@@ -22,6 +23,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Bidirectional Gemini Live transport. Call only after RECORD_AUDIO permission is granted.
@@ -62,10 +64,19 @@ class GeminiLiveSession(
     private val recording = AtomicBoolean(false)
     private val playing = AtomicBoolean(false)
     @Volatile private var socket: WebSocket? = null
+    @Volatile private var socketOpenedAtMs: Long = 0L
+    private val localCloseIntent = AtomicReference<String?>(null)
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var track: AudioTrack? = null
     private var echoCanceler: AcousticEchoCanceler? = null
     private var noiseSuppressor: NoiseSuppressor? = null
+
+    private fun closeSocket(webSocket: WebSocket?, code: Int, reason: String, source: String) {
+        localCloseIntent.set("$source (code=$code, reason=$reason)")
+        val elapsed = if (socketOpenedAtMs > 0L) SystemClock.elapsedRealtime() - socketOpenedAtMs else -1L
+        listener.onDiagnostic("App requested WebSocket close: source=$source, code=$code, reason=$reason, elapsedMs=$elapsed.")
+        webSocket?.close(code, reason)
+    }
 
     fun connect() {
         if (closed.get()) return
@@ -90,6 +101,8 @@ class GeminiLiveSession(
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(logTag, "websocket_open status=${response.code} protocol=${response.protocol} model=${token.model} apiVersion=${token.apiVersion}")
+                socketOpenedAtMs = SystemClock.elapsedRealtime()
+                localCloseIntent.set(null)
                 listener.onDiagnostic("WebSocket opened: HTTP ${response.code}, protocol ${response.protocol}.")
                 // Minimal protocol-isolation handshake: keep only the required model and
                 // AUDIO response modality. Optional setup fields are restored individually
@@ -106,7 +119,7 @@ class GeminiLiveSession(
                 setupTimeout = connectionTimer.schedule({
                     if (!setupComplete.get() && !closed.get()) {
                         listener.onError("Gemini connected, but did not complete session setup within 20 seconds. Check the Live model and setup configuration.")
-                        webSocket.close(1001, "Gemini setup timeout")
+                        closeSocket(webSocket, 1001, "Gemini setup timeout", "setup-timeout")
                     }
                 }, 20, TimeUnit.SECONDS)
                 val setupSent = webSocket.send(setup.toString())
@@ -115,7 +128,7 @@ class GeminiLiveSession(
                 if (!setupSent) {
                     setupTimeout?.cancel(false)
                     listener.onError("Could not send the Gemini Live session setup message.")
-                    webSocket.close(1001, "Setup send failed")
+                    closeSocket(webSocket, 1001, "Setup send failed", "setup-send-failed")
                 }
             }
 
@@ -132,7 +145,7 @@ class GeminiLiveSession(
                         setupTimeout?.cancel(false)
                         Log.e(logTag, "server_setup_error status=$status message=${message.take(1200)}")
                         listener.onError("Gemini Live rejected the session${if (status.isNotBlank()) " ($status)" else ""}: ${message.ifBlank { "unspecified server error" }}")
-                        webSocket.close(1008, "Gemini setup rejected")
+                        closeSocket(webSocket, 1008, "Gemini setup rejected", "server-setup-error")
                         return
                     }
                     if (root.has("setupComplete")) {
@@ -385,7 +398,7 @@ class GeminiLiveSession(
     fun close() {
         if (!closed.compareAndSet(false, true)) return
         recording.set(false)
-        socket?.close(1000, "Call ended")
+        closeSocket(socket, 1000, "Call ended", "session-close-called")
         stopPlayback()
         recorder?.runCatching { stop() }
         track?.release()
