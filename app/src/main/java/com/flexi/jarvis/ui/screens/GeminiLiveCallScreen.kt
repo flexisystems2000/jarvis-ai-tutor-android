@@ -120,8 +120,15 @@ fun GeminiLiveCallScreen(
     var aiEndCallHandled by remember { mutableStateOf(false) }
     var cameraEnabled by remember { mutableStateOf(false) }
     var screenSharing by remember { mutableStateOf(false) }
+    var startVideoWhenConnected by remember { mutableStateOf(false) }
+    var startScreenShareWhenConnected by remember { mutableStateOf(false) }
     var cameraPublisher by remember { mutableStateOf<LiveCameraPublisher?>(null) }
-    val previewView = remember(context) { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
+    val previewView = remember(context) {
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        }
+    }
 
     // Short native call tones: a WhatsApp-style outgoing ringback on connect,
     // followed by a brief disconnect tone whenever the call ends (manual or AI).
@@ -307,6 +314,33 @@ fun GeminiLiveCallScreen(
         }
     }
 
+    val microphonePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) beginCall() else error = "Microphone permission is required for a voice call."
+    }
+
+    // Video and screen sharing require an active Gemini Live session. If either
+    // control is tapped before the call starts, establish the voice session first.
+    LaunchedEffect(connected, startVideoWhenConnected) {
+        if (connected && startVideoWhenConnected) {
+            startVideoWhenConnected = false
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                cameraEnabled = true
+            } else {
+                cameraPermission.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
+
+    LaunchedEffect(connected, startScreenShareWhenConnected) {
+        if (connected && startScreenShareWhenConnected) {
+            startScreenShareWhenConnected = false
+            val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            screenSharePermission.launch(manager.createScreenCaptureIntent())
+        }
+    }
+
     LaunchedEffect(cameraEnabled, connected) {
         if (cameraEnabled && connected && cameraPublisher == null) {
             val owner = context as? LifecycleOwner
@@ -339,12 +373,6 @@ fun GeminiLiveCallScreen(
                 context.startService(Intent(context, JarvisScreenShareService::class.java).setAction(JarvisScreenShareService.ACTION_STOP))
             }
         }
-    }
-
-    val microphonePermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) beginCall() else error = "Microphone permission is required for a voice call."
     }
 
     val infinite = rememberInfiniteTransition(label = "jarvis-purple-wave")
@@ -515,6 +543,13 @@ fun GeminiLiveCallScreen(
                         cameraEnabled = false
                         cameraPublisher?.stop()
                         cameraPublisher = null
+                    } else if (!connected) {
+                        startVideoWhenConnected = true
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            beginCall()
+                        } else {
+                            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
                     } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                         cameraEnabled = true
                     } else cameraPermission.launch(Manifest.permission.CAMERA)
@@ -529,6 +564,13 @@ fun GeminiLiveCallScreen(
                         screenSharing = false
                         ScreenShareFrameBus.onFrame = null
                         status = "Screen sharing stopped."
+                    } else if (!connected) {
+                        startScreenShareWhenConnected = true
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            beginCall()
+                        } else {
+                            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
                     } else {
                         val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                         screenSharePermission.launch(manager.createScreenCaptureIntent())
