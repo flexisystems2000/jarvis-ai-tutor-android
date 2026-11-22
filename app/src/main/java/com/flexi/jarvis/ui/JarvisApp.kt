@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -130,9 +131,9 @@ fun JarvisApp() {
     var accountBusy by remember { mutableStateOf(false) }
     var accountMessage by remember { mutableStateOf<String?>(null) }
 
-    var selectedTab by remember { mutableStateOf(AppTab.TUTOR) }
+    var selectedTab by rememberSaveable { mutableStateOf(AppTab.TUTOR) }
     var historyExpanded by remember { mutableStateOf(false) }
-    var selectedConversationId by remember { mutableStateOf<String?>(null) }
+    var selectedConversationId by rememberSaveable { mutableStateOf<String?>(null) }
     var usedToday by remember { mutableIntStateOf(0) }
 
     fun reportError(error: Throwable) {
@@ -167,7 +168,6 @@ fun JarvisApp() {
                         refreshAccount()
                     }.onSuccess {
                         if (account != null) {
-                            selectedTab = AppTab.ACCOUNT
                             accountMessage = "Your account is ready."
                         }
                     }.onFailure(::reportError)
@@ -189,10 +189,16 @@ fun JarvisApp() {
 
     // Clear the selected conversation whenever the account changes.
     // This prevents a previous user's conversation ID from being reused.
-    LaunchedEffect(account?.id) {
-        selectedConversationId = null
+    var previousAccountId by remember { mutableStateOf<String?>(null) }
 
-        val signedInUserId = account?.id
+    LaunchedEffect(account?.id) {
+        val currentAccountId = account?.id
+        if (previousAccountId != null && previousAccountId != currentAccountId) {
+            selectedConversationId = null
+        }
+        previousAccountId = currentAccountId
+
+        val signedInUserId = currentAccountId
             ?: return@LaunchedEffect
 
         runCatching {
@@ -216,9 +222,6 @@ fun JarvisApp() {
                             "Account updated successfully."
                         }
 
-                    if (result.id != "pending-email-verification") {
-                        selectedTab = AppTab.ACCOUNT
-                    }
                 }
                 .onFailure(::reportError)
 
@@ -653,7 +656,6 @@ fun JarvisApp() {
                                             account = it
                                             accountMessage =
                                                 "Google sign-in successful!"
-                                            selectedTab = AppTab.ACCOUNT
                                         }.onFailure(::reportError)
 
                                         accountBusy = false
