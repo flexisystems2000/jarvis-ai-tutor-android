@@ -501,10 +501,35 @@ fun GeminiLiveCallScreen(
             }
         } else {
             Spacer(Modifier.height(8.dp))
-            AndroidView(
-                factory = { previewView },
-                modifier = Modifier.fillMaxWidth().height(178.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(178.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            ) {
+                AndroidView(
+                    factory = { previewView },
+                    modifier = Modifier.fillMaxSize()
+                )
+                Surface(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                    shape = CircleShape,
+                    color = Color(0xCC160D27),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                ) {
+                    IconButton(
+                        onClick = { cameraPublisher?.switchCamera() },
+                        enabled = connected,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Cameraswitch,
+                            contentDescription = "Flip front or rear camera",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
         }
 
         Text(tutorName, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
@@ -614,7 +639,7 @@ fun GeminiLiveCallScreen(
                 IconButton(
                     onClick = {
                         if (cameraEnabled) {
-                            cameraPublisher?.switchCamera()
+                            cameraEnabled = false
                         } else if (!connected) {
                             startVideoWhenConnected = true
                             if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -631,8 +656,8 @@ fun GeminiLiveCallScreen(
                     enabled = !cameraEnabled || connected
                 ) {
                     Icon(
-                        imageVector = if (cameraEnabled) Icons.Default.Cameraswitch else Icons.Default.CameraAlt,
-                        contentDescription = if (cameraEnabled) "Flip camera" else "Turn video on",
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = if (cameraEnabled) "Turn video off" else "Turn video on",
                         tint = Color.White
                     )
                 }
