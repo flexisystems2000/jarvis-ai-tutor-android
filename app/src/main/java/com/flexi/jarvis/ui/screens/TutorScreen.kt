@@ -891,6 +891,27 @@ fun TutorScreen(
                     }
                 }
 
+                // Dedicated video-call entry point (separate from the voice-call button).
+                if (prompt.isBlank()) {
+                    IconButton(
+                        onClick = {
+                            if (userId.isNullOrBlank()) {
+                                notice = "Sign in before starting a JARVIS video call."
+                            } else {
+                                liveCallOpen = true
+                            }
+                        },
+                        enabled = !sending && !recording && !transcribing
+                    ) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = "Start JARVIS video call",
+                            tint = colors.primary,
+                            modifier = Modifier.size(25.dp)
+                        )
+                    }
+                }
+
                 // COMPOSER ACTION: call when empty, send when the user has typed a message.
                 FilledIconButton(
                     onClick = {
