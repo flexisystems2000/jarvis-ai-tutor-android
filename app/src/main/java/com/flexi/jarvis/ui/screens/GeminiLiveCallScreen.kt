@@ -83,8 +83,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.flexi.jarvis.live.GeminiLiveSession
-import com.flexi.jarvis.network.GeminiLiveTokenApi
+import com.flexi.jarvis.live.LiveSessionClient
+import com.flexi.jarvis.network.LiveSessionApi
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
@@ -97,7 +97,7 @@ private val JarvisViolet = Color(0xFF6D28D9)
 fun GeminiLiveCallScreen(
     tutorName: String,
     languageCode: String,
-    tokenApi: GeminiLiveTokenApi,
+    liveApi: LiveSessionApi,
     onCompletedTurn: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -107,7 +107,7 @@ fun GeminiLiveCallScreen(
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
-    var session by remember { mutableStateOf<GeminiLiveSession?>(null) }
+    var session by remember { mutableStateOf<LiveSessionClient?>(null) }
     var connecting by remember { mutableStateOf(false) }
     var connected by remember { mutableStateOf(false) }
     var muted by remember { mutableStateOf(false) }
@@ -220,9 +220,9 @@ fun GeminiLiveCallScreen(
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         refreshAudioRoute()
         scope.launch {
-            runCatching { tokenApi.create(tutorName, languageCode) }
+            runCatching { liveApi.create(tutorName, languageCode) }
                 .onSuccess { liveToken ->
-                    diagnostics = diagnostics + "Temporary token received. Model: ${liveToken.model}; API: ${liveToken.apiVersion}. Token value hidden."
+                    diagnostics = diagnostics + "Cloudflare connection configuration received; provider credentials remain server-side."
                     val live = GeminiLiveSession(context, liveToken, object : GeminiLiveSession.Listener {
                         override fun onDiagnostic(message: String) {
                             mainHandler.post { diagnostics = (diagnostics + message).takeLast(30) }
