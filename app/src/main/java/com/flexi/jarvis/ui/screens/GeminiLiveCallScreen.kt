@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -51,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -104,6 +106,14 @@ fun GeminiLiveCallScreen(
     var outputDevice by remember { mutableStateOf("Phone speaker") }
     var volume by remember { mutableFloatStateOf(1f) }
     var showVolume by remember { mutableStateOf(false) }
+    var callEnded by remember { mutableStateOf(false) }
+
+    // Audible acknowledgement when the user opens the call screen from the composer.
+    LaunchedEffect(Unit) {
+        val tone = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80)
+        tone.startTone(ToneGenerator.TONE_PROP_ACK, 180)
+        mainHandler.postDelayed({ tone.release() }, 260L)
+    }
 
     val previousAudioMode = remember { audioManager.mode }
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL).coerceAtLeast(1) }
@@ -152,8 +162,19 @@ fun GeminiLiveCallScreen(
         }
     }
 
+    fun endCall() {
+        if (callEnded) return
+        callEnded = true
+        session?.close()
+        session = null
+        connected = false
+        connecting = false
+        audioManager.mode = previousAudioMode
+        onDismiss()
+    }
+
     fun beginCall() {
-        if (connecting || connected) return
+        if (connecting || connected || callEnded) return
         connecting = true
         error = null
         status = "Connecting securely to JARVIS..."
@@ -172,7 +193,17 @@ fun GeminiLiveCallScreen(
                             }
                         }
                         override fun onInputTranscript(text: String) {
-                            mainHandler.post { userTurn = (userTurn + " " + text).trim() }
+                            mainHandler.post {
+                                userTurn = (userTurn + " " + text).trim()
+                                if (isEndCallRequest(userTurn)) {
+                                    val finalUserText = userTurn.trim()
+                                    val finalAssistantText = jarvisTurn.trim()
+                                    if (finalUserText.isNotBlank() || finalAssistantText.isNotBlank()) {
+                                        onCompletedTurn(finalUserText, finalAssistantText)
+                                    }
+                                    endCall()
+                                }
+                            }
                         }
                         override fun onOutputTranscript(text: String) {
                             mainHandler.post { jarvisTurn = (jarvisTurn + " " + text).trim() }
@@ -224,15 +255,6 @@ fun GeminiLiveCallScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) beginCall() else error = "Microphone permission is required for a voice call."
-    }
-
-    fun endCall() {
-        session?.close()
-        session = null
-        connected = false
-        connecting = false
-        audioManager.mode = previousAudioMode
-        onDismiss()
     }
 
     val infinite = rememberInfiniteTransition(label = "jarvis-purple-wave")
@@ -459,3 +481,19 @@ private fun PurpleAudioWaveform(level: Float, active: Boolean, modifier: Modifie
 }
 
 private const val fiftyBars = 48
+
+/** Matches clear spoken requests to finish the current Live call. */
+private fun isEndCallRequest(transcript: String): Boolean {
+    val normalized = transcript.lowercase()
+        .replace(Regex("[^a-z0-9 ]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    val phrases = listOf(
+        "end the call", "end this call", "end call",
+        "hang up", "hang up the call", "disconnect",
+        "disconnect the call", "stop the call", "stop call",
+        "close the call", "close this call",
+        "goodbye jarvis", "bye jarvis"
+    )
+    return phrases.any { normalized.contains(it) }
+}
