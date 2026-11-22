@@ -47,7 +47,7 @@ class LiveCameraPublisher(
                 analysis.setAnalyzer(executor) { image ->
                     try {
                         val now = SystemClock.elapsedRealtime()
-                        if (now - lastFrameAt >= 350L) {
+                        if (now - lastFrameAt >= 2_000L) {
                             lastFrameAt = now
                             yuvToJpeg(image)?.let(onJpegFrame)
                         }
