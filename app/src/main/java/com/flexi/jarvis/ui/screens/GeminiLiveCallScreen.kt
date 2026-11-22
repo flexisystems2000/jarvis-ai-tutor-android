@@ -195,14 +195,17 @@ fun GeminiLiveCallScreen(
                         override fun onInputTranscript(text: String) {
                             mainHandler.post {
                                 userTurn = (userTurn + " " + text).trim()
-                                if (isEndCallRequest(userTurn)) {
-                                    val finalUserText = userTurn.trim()
-                                    val finalAssistantText = jarvisTurn.trim()
-                                    if (finalUserText.isNotBlank() || finalAssistantText.isNotBlank()) {
-                                        onCompletedTurn(finalUserText, finalAssistantText)
-                                    }
-                                    endCall()
+                            }
+                        }
+                        override fun onEndCallRequested(reason: String) {
+                            mainHandler.post {
+                                val finalUserText = userTurn.trim()
+                                val finalAssistantText = jarvisTurn.trim()
+                                if (finalUserText.isNotBlank() || finalAssistantText.isNotBlank()) {
+                                    onCompletedTurn(finalUserText, finalAssistantText)
                                 }
+                                status = "JARVIS is ending the call."
+                                endCall()
                             }
                         }
                         override fun onOutputTranscript(text: String) {
@@ -481,19 +484,3 @@ private fun PurpleAudioWaveform(level: Float, active: Boolean, modifier: Modifie
 }
 
 private const val fiftyBars = 48
-
-/** Matches clear spoken requests to finish the current Live call. */
-private fun isEndCallRequest(transcript: String): Boolean {
-    val normalized = transcript.lowercase()
-        .replace(Regex("[^a-z0-9 ]"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
-    val phrases = listOf(
-        "end the call", "end this call", "end call",
-        "hang up", "hang up the call", "disconnect",
-        "disconnect the call", "stop the call", "stop call",
-        "close the call", "close this call",
-        "goodbye jarvis", "bye jarvis"
-    )
-    return phrases.any { normalized.contains(it) }
-}
