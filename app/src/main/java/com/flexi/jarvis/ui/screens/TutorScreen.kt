@@ -489,7 +489,7 @@ fun TutorScreen(
                     }
                 }
             ) {
-                Icon(Icons.Default.Call, contentDescription = null)
+                Icon(Icons.Default.AutoAwesome, contentDescription = null)
                 Spacer(Modifier.width(7.dp))
                 Text("Live voice call")
             }
