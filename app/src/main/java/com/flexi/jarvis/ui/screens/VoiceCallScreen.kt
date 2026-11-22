@@ -438,8 +438,10 @@ fun VoiceCallScreen(
         if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
             ScreenShareFrameBus.onFrame = { frame -> analyseFrame(frame, "shared screen") }
             ScreenShareFrameBus.onStopped = {
-                screenSharing = false
-                status = "Screen sharing stopped."
+                scope.launch {
+                    screenSharing = false
+                    status = "Screen sharing stopped."
+                }
             }
             val serviceIntent = Intent(context, JarvisScreenShareService::class.java)
                 .putExtra(JarvisScreenShareService.EXTRA_RESULT_CODE, result.resultCode)
