@@ -142,6 +142,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.markwon.core)
     implementation(libs.markwon.tables)
+    implementation(libs.coil.compose)
     implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
