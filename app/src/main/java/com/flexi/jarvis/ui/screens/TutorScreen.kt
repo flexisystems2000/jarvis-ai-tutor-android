@@ -429,6 +429,17 @@ fun TutorScreen(
         }
     }
 
+    if (liveCallOpen) {
+        GeminiLiveCallScreen(
+            tutorName = tutorName,
+            languageCode = languageCode,
+            tokenApi = geminiLiveTokenApi,
+            onCompletedTurn = ::saveLiveTurn,
+            onDismiss = { liveCallOpen = false }
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -475,16 +486,6 @@ fun TutorScreen(
                     modifier = Modifier.padding(11.dp)
                 )
             }
-        }
-
-        if (liveCallOpen) {
-            GeminiLiveCallDialog(
-                tutorName = tutorName,
-                languageCode = languageCode,
-                tokenApi = geminiLiveTokenApi,
-                onCompletedTurn = ::saveLiveTurn,
-                onDismiss = { liveCallOpen = false }
-            )
         }
 
         Spacer(Modifier.height(16.dp))
