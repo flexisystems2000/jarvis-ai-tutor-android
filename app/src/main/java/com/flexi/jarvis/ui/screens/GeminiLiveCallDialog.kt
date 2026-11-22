@@ -59,7 +59,7 @@ fun GeminiLiveCallDialog(
         scope.launch {
             runCatching { liveApi.create(tutorName, languageCode) }
                 .onSuccess { liveToken ->
-                    val live = GeminiLiveSession(context, liveToken, object : GeminiLiveSession.Listener {
+                    val live = LiveSessionClient(context, liveToken, object : LiveSessionClient.Listener {
                         override fun onConnected() = mainHandler.post {
                             connecting = false
                             connected = true
