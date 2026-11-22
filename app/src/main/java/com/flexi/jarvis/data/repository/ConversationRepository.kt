@@ -21,8 +21,9 @@ class ConversationRepository(private val api: SupabaseBackendApi) {
         conversationId: String,
         role: String,
         content: String,
-        citations: List<String> = emptyList()
-    ): ChatMessage = api.addMessage(userId, conversationId, role, content, citations).toChatMessage()
+        citations: List<String> = emptyList(),
+        imageUrl: String? = null
+    ): ChatMessage = api.addMessage(userId, conversationId, role, content, citations, imageUrl).toChatMessage()
 
     suspend fun rename(userId: String, conversationId: String, title: String) =
         api.updateConversationTitle(userId, conversationId, title)
@@ -49,7 +50,8 @@ class ConversationRepository(private val api: SupabaseBackendApi) {
         role = getString("role"),
         content = optString("content"),
         citations = optJSONArray("citations").toStringList(),
-        createdAt = optString("created_at")
+        createdAt = optString("created_at"),
+        imageUrl = optJSONObject("metadata")?.optString("image_url")?.takeIf { it.isNotBlank() }
     )
 
     private fun JSONArray?.toStringList(): List<String> =
