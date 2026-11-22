@@ -149,6 +149,7 @@ fun VoiceCallScreen(
     var captureJob by remember { mutableStateOf<Job?>(null) }
     var processingJob by remember { mutableStateOf<Job?>(null) }
     var previousAudioMode by remember { mutableStateOf<Int?>(null) }
+    var previousSpeakerphoneOn by remember { mutableStateOf<Boolean?>(null) }
 
     fun stopPlayback() {
         val track = audioTrackRef.getAndSet(null) ?: return
@@ -178,6 +179,8 @@ fun VoiceCallScreen(
         ScreenShareFrameBus.onFrame = null
         ScreenShareFrameBus.onStopped = null
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        previousSpeakerphoneOn?.let { audioManager.isSpeakerphoneOn = it }
+        previousSpeakerphoneOn = null
         previousAudioMode?.let { audioManager.mode = it }
         previousAudioMode = null
         utterances.close()
@@ -302,7 +305,17 @@ fun VoiceCallScreen(
         status = "Preparing your voice conversation..."
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
         previousAudioMode = audioManager.mode
+        previousSpeakerphoneOn = audioManager.isSpeakerphoneOn
         audioManager.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+        val connectedHeadset = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).any {
+            it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                it.type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET
+        }
+        if (!connectedHeadset) audioManager.isSpeakerphoneOn = true
         active.set(true)
         callActive = true
         connecting = false
@@ -493,9 +506,9 @@ fun VoiceCallScreen(
                 context.startService(Intent(context, JarvisScreenShareService::class.java).setAction(JarvisScreenShareService.ACTION_STOP))
             }
             utterances.close()
-            previousAudioMode?.let {
-                (context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).mode = it
-            }
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            previousSpeakerphoneOn?.let { audioManager.isSpeakerphoneOn = it }
+            previousAudioMode?.let { audioManager.mode = it }
         }
     }
 
