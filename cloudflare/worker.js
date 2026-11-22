@@ -206,7 +206,7 @@ async function handleLive(request,env,user,log,json) {
   let upstream = null;
   let lastFailure = "Gemini Live did not accept the connection.";
   for (let index=0; index<apiKeys.length; index++) {
-    const url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=" + encodeURIComponent(apiKeys[index]);
+    const url = "https://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=" + encodeURIComponent(apiKeys[index]);
     try {
       const response = await fetch(url,{headers:{Upgrade:"websocket"}});
       if (response.status===101 && response.webSocket) {
@@ -219,13 +219,13 @@ async function handleLive(request,env,user,log,json) {
       lastFailure="Provider handshake HTTP "+response.status+(detail?": "+detail:"");
       log("warn","live_upstream_handshake_rejected",{requestId,keySlot:index+1,httpStatus:response.status,detail});
     } catch(error) {
-      lastFailure=String(error?.message||"Provider connection failed").slice(0,500);
+      lastFailure=redactSecrets(String(error?.message||"Provider connection failed")).slice(0,500);
       log("warn","live_upstream_connect_error",{requestId,keySlot:index+1,message:lastFailure});
     }
   }
   if(!upstream) {
-    log("error","live_upstream_unavailable",{requestId,reason:lastFailure});
-    return json({detail:"Cloudflare could not establish the Gemini Live connection. "+lastFailure,requestId},502);
+    log("error","live_upstream_unavailable",{requestId,reason:redactSecrets(lastFailure)});
+    return json({detail:"Cloudflare could not establish the Gemini Live connection. "+redactSecrets(lastFailure),requestId},502);
   }
   const pair=new WebSocketPair();
   const client=pair[0], server=pair[1];
@@ -335,4 +335,8 @@ async function handleLive(request,env,user,log,json) {
   }}));
   log("info","live_session_started",{requestId,userId:user?.id||null,model:"gemini-3.8-live",apiVersion:"v1beta"});
   return new Response(null,{status:101,webSocket:client});
+}
+
+function redactSecrets(value) {
+  return String(value || "").replace(/([?&]key=)[^&\\s]+/gi, "$1[redacted]");
 }
