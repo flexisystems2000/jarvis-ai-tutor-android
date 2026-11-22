@@ -64,7 +64,7 @@ class SupabaseBackendApi(private val supabase: SupabaseClient) {
             .put("metadata", metadata)
         val rows = request(
             method = "POST",
-            path = "/rest/v1/messages?select=id,conversation_id,user_id,role,content,citations,created_at",
+            path = "/rest/v1/messages?select=id,conversation_id,user_id,role,content,citations,metadata,created_at",
             body = row,
             prefer = "return=representation"
         ) as JSONArray
