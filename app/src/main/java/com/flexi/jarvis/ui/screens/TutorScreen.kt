@@ -47,6 +47,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import org.json.JSONObject
 import android.widget.TextView
 import android.text.method.LinkMovementMethod
 import io.noties.markwon.Markwon
@@ -70,6 +73,7 @@ fun TutorScreen(
     conversationRepository: ConversationRepository,
     speechTranscriptionApi: SpeechTranscriptionApi,
     aiTutorApi: com.flexi.jarvis.network.AiTutorApi,
+    imageGenerationApi: com.flexi.jarvis.network.ImageGenerationApi,
     ttsApi: com.flexi.jarvis.network.GeminiTtsApi,
     liveSessionApi: com.flexi.jarvis.network.LiveSessionApi,
     selectedConversationId: String?,
@@ -394,13 +398,59 @@ fun TutorScreen(
                     ?: conversationRepository.create(owner, cleanPrompt.take(70)).id.also(onConversationOpened)
                 activeConversationId = conversationId
 
-                // Save the user message first so it is not lost if the AI service is temporarily unavailable.
+                // Save the learner's message before any network call.
                 conversationRepository.addMessage(owner, conversationId, "user", cleanPrompt)
                 prompt = ""
 
                 val priorTurns = messages.map {
                     com.flexi.jarvis.network.TutorTurn(it.role, it.content)
                 } + com.flexi.jarvis.network.TutorTurn("user", cleanPrompt)
+
+                // Gemini classifies likely visual requests; ordinary chat avoids a second
+                // routing call. The keyword gate only narrows candidates — Gemini decides intent.
+                var generatedImageUrl: String? = null
+                var imageFailure: String? = null
+                if (isPossibleImageRequest(cleanPrompt)) {
+                    notice = "JARVIS is checking your image request..."
+                    val routingPrompt = """
+                        You are JARVIS's image-generation intent router.
+                        Decide whether the learner is asking JARVIS to CREATE a new image, drawing,
+                        illustration, chart, or diagram. Do not classify ordinary explanations,
+                        image analysis, or questions about existing images as image creation.
+                        Use conversation context when resolving references such as "that" or "it".
+                        Return ONLY valid JSON with this exact shape:
+                        {"generate":true,"prompt":"a complete, detailed image-generation prompt"}
+                        or {"generate":false,"prompt":""}.
+                        Preserve the learner's subject and educational purpose.
+                        Learner's latest request: ${JSONObject.quote(cleanPrompt)}
+                    """.trimIndent()
+                    val route = runCatching {
+                        aiTutorApi.ask(
+                            com.flexi.jarvis.network.TutorRequest(
+                                conversationId = conversationId,
+                                message = routingPrompt,
+                                tutorName = tutorName,
+                                languageCode = languageCode,
+                                webSearch = false,
+                                history = messages.takeLast(8).map {
+                                    com.flexi.jarvis.network.TutorTurn(it.role, it.content)
+                                }
+                            )
+                        ).getOrThrow().text
+                    }.getOrNull()
+
+                    val intent = route?.let(::parseImageIntent)
+                    if (intent?.first == true && intent.second.isNotBlank()) {
+                        notice = "JARVIS is generating your image..."
+                        runCatching {
+                            imageGenerationApi.generate(intent.second).url
+                        }.onSuccess {
+                            generatedImageUrl = it
+                        }.onFailure {
+                            imageFailure = it.message ?: "Image generation failed. Please try again."
+                        }
+                    }
+                }
 
                 val reply = aiTutorApi.ask(
                     com.flexi.jarvis.network.TutorRequest(
@@ -418,10 +468,12 @@ fun TutorScreen(
                     conversationId,
                     "assistant",
                     reply.text,
-                    reply.citations
+                    reply.citations,
+                    generatedImageUrl
                 )
 
                 messages = conversationRepository.messages(owner, conversationId)
+                notice = imageFailure
                 selectedMedia?.let {
                     notice = "Text response received. The selected attachment still needs upload support."
                 }
@@ -667,6 +719,25 @@ fun TutorScreen(
                                     content = message.content,
                                     modifier = Modifier.fillMaxWidth()
                                 )
+
+                                message.imageUrl?.let { imageUrl ->
+                                    Spacer(Modifier.height(10.dp))
+                                    AsyncImage(
+                                        model = imageUrl,
+                                        contentDescription = "Image generated by JARVIS",
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 380.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                    )
+                                    Text(
+                                        "Generated by JARVIS AI",
+                                        color = colors.onSurfaceVariant,
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(top = 5.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1101,4 +1172,23 @@ private fun SuggestionCard(
             )
         }
     }
+}
+
+
+private fun isPossibleImageRequest(prompt: String): Boolean {
+    val candidateWords = Regex(
+        """\b(generate|create|draw|drawing|illustrate|illustration|visuali[sz]e|make|show|design|render|sketch|diagram|picture|image|chart|graph|visual)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    return candidateWords.containsMatchIn(prompt)
+}
+
+private fun parseImageIntent(raw: String): Pair<Boolean, String>? {
+    val start = raw.indexOf('{')
+    val end = raw.lastIndexOf('}')
+    if (start < 0 || end <= start) return null
+    return runCatching {
+        val json = JSONObject(raw.substring(start, end + 1))
+        json.optBoolean("generate") to json.optString("prompt").trim()
+    }.getOrNull()
 }
