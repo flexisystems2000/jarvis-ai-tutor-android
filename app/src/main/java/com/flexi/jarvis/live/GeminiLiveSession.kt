@@ -45,6 +45,7 @@ class GeminiLiveSession(
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
     private val executor = Executors.newSingleThreadExecutor()
+    private val playbackExecutor = Executors.newSingleThreadExecutor()
     private val closed = AtomicBoolean(false)
     private val recording = AtomicBoolean(false)
     private val playing = AtomicBoolean(false)
@@ -202,7 +203,7 @@ class GeminiLiveSession(
 
     private fun playPcm(bytes: ByteArray) {
         if (bytes.isEmpty() || closed.get()) return
-        executor.execute {
+        playbackExecutor.execute {
             try {
                 val sampleRate = 24_000
                 val minimum = AudioTrack.getMinBufferSize(
@@ -253,6 +254,7 @@ class GeminiLiveSession(
         track?.release()
         track = null
         executor.shutdownNow()
+        playbackExecutor.shutdownNow()
         client.dispatcher.executorService.shutdown()
     }
 }
