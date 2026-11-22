@@ -350,7 +350,7 @@ fun TutorScreen(
             runCatching {
                 val activeId = selectedConversationId
                     ?: liveConversationId
-                    ?: conversationRepository.create(owner, "JARVIS Live call").id.also {
+                    ?: conversationRepository.create(owner, "JARVIS voice call").id.also {
                         liveConversationId = it
                         onConversationOpened(it)
                     }
@@ -915,7 +915,7 @@ fun TutorScreen(
                     onClick = {
                         if (prompt.isBlank()) {
                             if (userId.isNullOrBlank()) {
-                                notice = "Sign in before starting a JARVIS Live call."
+                                notice = "Sign in before starting a JARVIS voice call."
                             } else {
                                 liveCallOpen = true
                             }
@@ -938,7 +938,7 @@ fun TutorScreen(
                     } else if (prompt.isBlank()) {
                         Icon(
                             Icons.Default.Call,
-                            contentDescription = "Start JARVIS Live call"
+                            contentDescription = "Start JARVIS voice call"
                         )
                     } else {
                         Icon(
