@@ -44,10 +44,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.toArgb
+import android.widget.TextView
+import android.text.method.LinkMovementMethod
+import io.noties.markwon.Markwon
+import io.noties.markwon.ext.tables.TablePlugin
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mikepenz.markdown.m3.Markdown
 import androidx.core.content.ContextCompat
 import com.flexi.jarvis.data.model.ChatMessage
 import com.flexi.jarvis.data.repository.ConversationRepository
@@ -612,7 +617,7 @@ fun TutorScreen(
 
                                 Spacer(Modifier.height(5.dp))
 
-                                Markdown(
+                                RichMarkdownText(
                                     content = message.content,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -889,6 +894,40 @@ fun TutorScreen(
                 .padding(bottom = 6.dp)
         )
     }
+}
+
+@Composable
+private fun RichMarkdownText(
+    content: String,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
+    val bodyColor = colors.onSurfaceVariant.toArgb()
+    val linkColor = colors.primary.toArgb()
+    val markwon = remember(context) {
+        Markwon.builder(context)
+            .usePlugin(TablePlugin.create(context))
+            .build()
+    }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { viewContext ->
+            TextView(viewContext).apply {
+                textSize = 14f
+                setTextColor(bodyColor)
+                setLinkTextColor(linkColor)
+                movementMethod = LinkMovementMethod.getInstance()
+                includeFontPadding = true
+            }
+        },
+        update = { textView ->
+            textView.setTextColor(bodyColor)
+            textView.setLinkTextColor(linkColor)
+            markwon.setMarkdown(textView, content)
+        }
+    )
 }
 
 @Composable
