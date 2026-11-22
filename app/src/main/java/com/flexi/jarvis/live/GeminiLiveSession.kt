@@ -235,17 +235,21 @@ class GeminiLiveSession(
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(logTag, "websocket_closing code=$code reason=${reason.take(500)} setupComplete=${setupComplete.get()}")
-                listener.onDiagnostic("WebSocket closing: code $code${if (reason.isNotBlank()) ", ${reason.take(240)}" else ""}; setupComplete=${setupComplete.get()}.")
+                val elapsed = if (socketOpenedAtMs > 0L) SystemClock.elapsedRealtime() - socketOpenedAtMs else -1L
+                val requestedByApp = localCloseIntent.get()
+                listener.onDiagnostic("WebSocket closing: code $code; reason=${reason.take(240)}; setupComplete=${setupComplete.get()}; elapsedMs=$elapsed; appCloseIntent=${requestedByApp ?: "none-recorded"}.")
                 super.onClosing(webSocket, code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(logTag, "websocket_closed code=$code reason=${reason.take(500)} setupComplete=${setupComplete.get()}")
-                listener.onDiagnostic("WebSocket closed: code $code${if (reason.isNotBlank()) ", ${reason.take(240)}" else ""}; setupComplete=${setupComplete.get()}.")
+                val elapsed = if (socketOpenedAtMs > 0L) SystemClock.elapsedRealtime() - socketOpenedAtMs else -1L
+                val requestedByApp = localCloseIntent.get()
+                listener.onDiagnostic("WebSocket closed: code $code; reason=${reason.take(240)}; setupComplete=${setupComplete.get()}; elapsedMs=$elapsed; appCloseIntent=${requestedByApp ?: "none-recorded"}.")
                 setupTimeout?.cancel(false)
                 stopAudio()
                 if (!setupComplete.get() && !closed.get()) {
-                    listener.onError("Gemini closed the connection before setup completed (code $code${if (reason.isNotBlank()) ", $reason" else ""}).")
+                    listener.onError("Gemini closed before setup completed (code $code; elapsed ${elapsed}ms; app close intent ${requestedByApp ?: "none recorded"}).")
                 }
                 listener.onClosed()
             }
