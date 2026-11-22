@@ -46,7 +46,7 @@ class GeminiLiveTokenApi(
                 if (token.isBlank()) error("The Live service returned an empty session token.")
                 GeminiLiveToken(
                     token = token,
-                    model = json.optString("model", "gemini-2.5-flash-native-audio-preview-12-2025"),
+                    model = json.optString("model", "gemini-3.1-flash-live-preview"),
                     apiVersion = json.optString("apiVersion", "v1alpha")
                 )
             } finally {
