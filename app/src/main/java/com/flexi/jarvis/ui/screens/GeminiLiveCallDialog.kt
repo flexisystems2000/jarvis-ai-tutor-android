@@ -89,6 +89,18 @@ fun GeminiLiveCallDialog(
                             status = "JARVIS was interrupted. Go ahead."
                         }.let { }
 
+                        override fun onAudioLevel(level: Float) {
+                            // Available for live audio-level UI feedback.
+                        }
+
+                        override fun onEndCallRequested(reason: String) = mainHandler.post {
+                            status = reason
+                            session?.close()
+                            session = null
+                            connected = false
+                            connecting = false
+                        }.let { }
+
                         override fun onError(message: String) = mainHandler.post {
                             error = message
                             connecting = false
