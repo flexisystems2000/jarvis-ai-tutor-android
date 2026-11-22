@@ -592,16 +592,6 @@ fun GeminiLiveCallScreen(
             }
         }
 
-        if (cameraEnabled) {
-            TextButton(
-                onClick = { cameraPublisher?.switchCamera() },
-                enabled = connected,
-                modifier = Modifier.padding(top = 0.dp, bottom = 2.dp)
-            ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFFD8C5FF))
-                Text("  Flip camera", color = Color(0xFFD8C5FF), fontWeight = FontWeight.SemiBold)
-            }
-        }
         Spacer(Modifier.height(4.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -620,23 +610,30 @@ fun GeminiLiveCallScreen(
                 )
             }
             Surface(shape = CircleShape, color = if (cameraEnabled) JarvisPurple else Color(0xFF302044)) {
-                IconButton(onClick = {
-                    if (cameraEnabled) {
-                        cameraEnabled = false
-                        cameraPublisher?.stop()
-                        cameraPublisher = null
-                    } else if (!connected) {
-                        startVideoWhenConnected = true
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            beginCall()
+                IconButton(
+                    onClick = {
+                        if (cameraEnabled) {
+                            cameraPublisher?.switchCamera()
+                        } else if (!connected) {
+                            startVideoWhenConnected = true
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                beginCall()
+                            } else {
+                                microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                            cameraEnabled = true
                         } else {
-                            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                            cameraPermission.launch(Manifest.permission.CAMERA)
                         }
-                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                        cameraEnabled = true
-                    } else cameraPermission.launch(Manifest.permission.CAMERA)
-                }) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = if (cameraEnabled) "Turn video off" else "Turn video on", tint = Color.White)
+                    },
+                    enabled = !cameraEnabled || connected
+                ) {
+                    Icon(
+                        Icons.Default.CameraAlt,
+                        contentDescription = if (cameraEnabled) "Flip camera" else "Turn video on",
+                        tint = Color.White
+                    )
                 }
             }
             Surface(shape = CircleShape, color = if (screenSharing) JarvisPurple else Color(0xFF302044)) {
