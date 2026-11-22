@@ -209,10 +209,12 @@ class LiveSessionClient(
                             .setSampleRate(24_000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                         .setBufferSizeInBytes(maxOf(minimum * 2, bytes.size * 2))
                         .setTransferMode(AudioTrack.MODE_STREAM).build()
+                    output.setVolume(1.0f)
                     track = output
                 }
                 if (playing.compareAndSet(false, true)) output.play()
-                listener.onAudioLevel(pcmLevel(bytes, bytes.size))
+                // Audio-level callbacks represent microphone input only. Reporting
+                // speaker playback here made the UI incorrectly claim the user was listening.
                 output.write(bytes, 0, bytes.size)
             } catch (error: Exception) {
                 listener.onError("Audio playback error: ${error.message ?: "unknown error"}")
