@@ -87,6 +87,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val JarvisPurple = Color(0xFF9B5CFF)
 private val JarvisViolet = Color(0xFF6D28D9)
@@ -123,6 +124,7 @@ fun GeminiLiveCallScreen(
     var startVideoWhenConnected by remember { mutableStateOf(false) }
     var startScreenShareWhenConnected by remember { mutableStateOf(false) }
     var cameraPublisher by remember { mutableStateOf<LiveCameraPublisher?>(null) }
+    val visionRequestInFlight = remember { AtomicBoolean(false) }
     val previewView = remember(context) {
         PreviewView(context).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
@@ -352,7 +354,16 @@ fun GeminiLiveCallScreen(
                     context = context,
                     lifecycleOwner = owner,
                     previewView = previewView,
-                    onJpegFrame = { frame -> session?.sendVideoFrame(frame) },
+                    onJpegFrame = { frame ->
+                        if (visionRequestInFlight.compareAndSet(false, true)) {
+                            scope.launch {
+                                runCatching { tokenApi.analyzeVideoFrame(frame) }
+                                    .onSuccess { description -> session?.sendText("Camera observation (latest frame): $description") }
+                                    .onFailure { cause -> mainHandler.post { error = cause.message ?: "Camera frame analysis failed." } }
+                                visionRequestInFlight.set(false)
+                            }
+                        }
+                    },
                     onError = { message -> mainHandler.post { error = message; cameraEnabled = false } }
                 )
                 cameraPublisher = publisher
