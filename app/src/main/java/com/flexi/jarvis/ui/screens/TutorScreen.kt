@@ -441,17 +441,10 @@ fun TutorScreen(
     }
 
     if (liveCallOpen) {
-        VoiceCallScreen(
+        GeminiLiveCallScreen(
             tutorName = tutorName,
             languageCode = languageCode,
-            webSearch = webSearch,
-            initialHistory = messages.map {
-                com.flexi.jarvis.network.TutorTurn(it.role, it.content)
-            },
-            speechApi = speechTranscriptionApi,
-            aiTutorApi = aiTutorApi,
-            ttsApi = ttsApi,
-            visionApi = geminiLiveTokenApi,
+            tokenApi = geminiLiveTokenApi,
             onCompletedTurn = ::saveLiveTurn,
             onDismiss = { liveCallOpen = false }
         )
