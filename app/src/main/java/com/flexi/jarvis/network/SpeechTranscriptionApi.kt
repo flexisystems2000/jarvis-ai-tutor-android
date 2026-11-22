@@ -49,11 +49,14 @@ class SpeechTranscriptionApi(
 
             connection.outputStream.use { output ->
                 output.write("--$boundary\r\n".toByteArray())
+                val isWav = audioFile.extension.equals("wav", ignoreCase = true)
+                val audioName = if (isWav) "voice.wav" else "voice.m4a"
+                val audioMime = if (isWav) "audio/wav" else "audio/mp4"
                 output.write(
-                    "Content-Disposition: form-data; name=\"audio\"; filename=\"voice.m4a\"\r\n"
+                    "Content-Disposition: form-data; name=\"audio\"; filename=\"$audioName\"\r\n"
                         .toByteArray()
                 )
-                output.write("Content-Type: audio/mp4\r\n\r\n".toByteArray())
+                output.write("Content-Type: $audioMime\r\n\r\n".toByteArray())
 
                 audioFile.inputStream().use { input ->
                     input.copyTo(output)
