@@ -171,7 +171,7 @@ fun GeminiLiveCallScreen(
             AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_WIRED_HEADSET,
             AudioDeviceInfo.TYPE_USB_HEADSET -> "Wired earphones"
-            else -> "Phone earpiece"
+            else -> if (audioManager.isSpeakerphoneOn) "Phone speaker" else "Phone earpiece"
         }
     }
 
@@ -223,12 +223,28 @@ fun GeminiLiveCallScreen(
         status = "Connecting securely to JARVIS..."
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         refreshAudioRoute()
-        // Keep calls on the private earpiece by default. Loudspeaker playback can
-        // leak JARVIS audio back into AudioRecord and create a self-triggering
-        // listen/speak loop on devices with weak or unavailable echo cancellation.
-        // Android automatically selects connected Bluetooth or wired headsets.
-        audioManager.isSpeakerphoneOn = false
-        diagnostics = diagnostics + "Using private call audio routing to reduce speaker-to-microphone feedback."
+        // Prefer connected headsets; otherwise use the phone loudspeaker.
+        // The LiveSessionClient enables Android acoustic echo cancellation and
+        // noise suppression for the VOICE_COMMUNICATION microphone source.
+        val hasExternalHeadset = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+        }
+        audioManager.isSpeakerphoneOn = !hasExternalHeadset
+        if (!hasExternalHeadset) {
+            val maximumCallVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+            audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maximumCallVolume, 0)
+            volume = 1f
+            outputDevice = "Phone speaker"
+            diagnostics = diagnostics + "Loudspeaker enabled at maximum supported call volume."
+        } else {
+            refreshAudioRoute()
+            diagnostics = diagnostics + "Using connected headset audio output."
+        }
         scope.launch {
             runCatching { liveApi.create(tutorName, languageCode) }
                 .onSuccess { liveConfig ->
