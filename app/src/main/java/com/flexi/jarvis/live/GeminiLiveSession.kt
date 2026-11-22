@@ -9,6 +9,7 @@ import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.util.Base64
+import android.util.Log
 import com.flexi.jarvis.network.GeminiLiveToken
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -31,6 +32,7 @@ class GeminiLiveSession(
     private val token: GeminiLiveToken,
     private val listener: Listener
 ) {
+    private val logTag = "JarvisGeminiLive"
     interface Listener {
         fun onConnected() {}
         fun onInputTranscript(text: String) {}
@@ -84,6 +86,7 @@ class GeminiLiveSession(
         try {
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                Log.i(logTag, "websocket_open status=${response.code} protocol=${response.protocol} model=${token.model} apiVersion=${token.apiVersion}")
                 val endCallParameters = JSONObject()
                     .put("type", "OBJECT")
                     .put("properties", JSONObject().put(
@@ -138,13 +141,16 @@ class GeminiLiveSession(
                     .put("sessionResumption", JSONObject())
 
                 val setup = JSONObject().put("setup", setupBody)
+                Log.i(logTag, "setup_send model=models/${token.model} modalities=AUDIO tools=1 inputTranscription=true outputTranscription=true sessionResumption=true bytes=${setup.toString().toByteArray(Charsets.UTF_8).size}")
                 setupTimeout = connectionTimer.schedule({
                     if (!setupComplete.get() && !closed.get()) {
                         listener.onError("Gemini connected, but did not complete session setup within 20 seconds. Check the Live model and setup configuration.")
                         webSocket.close(1001, "Gemini setup timeout")
                     }
                 }, 20, TimeUnit.SECONDS)
-                if (!webSocket.send(setup.toString())) {
+                val setupSent = webSocket.send(setup.toString())
+                Log.i(logTag, "setup_send_accepted=$setupSent")
+                if (!setupSent) {
                     setupTimeout?.cancel(false)
                     listener.onError("Could not send the Gemini Live session setup message.")
                     webSocket.close(1001, "Setup send failed")
@@ -154,18 +160,23 @@ class GeminiLiveSession(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val root = JSONObject(text)
+                    Log.i(logTag, "server_message keys=${root.keys().asSequence().toList().joinToString(",")}")
                     if (root.has("error")) {
                         val serverError = root.optJSONObject("error")
                         val message = serverError?.optString("message").orEmpty()
                         val status = serverError?.optString("status").orEmpty()
                         setupTimeout?.cancel(false)
+                        Log.e(logTag, "server_setup_error status=$status message=${message.take(1200)}")
                         listener.onError("Gemini Live rejected the session${if (status.isNotBlank()) " ($status)" else ""}: ${message.ifBlank { "unspecified server error" }}")
                         webSocket.close(1008, "Gemini setup rejected")
                         return
                     }
                     if (root.has("setupComplete")) {
                         setupTimeout?.cancel(false)
-                        if (setupComplete.compareAndSet(false, true)) listener.onConnected()
+                        if (setupComplete.compareAndSet(false, true)) {
+                            Log.i(logTag, "setup_complete")
+                            listener.onConnected()
+                        }
                         return
                     }
                     root.optJSONObject("sessionResumptionUpdate")
@@ -225,6 +236,7 @@ class GeminiLiveSession(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.e(logTag, "websocket_failure httpStatus=${response?.code ?: -1} message=${t.message ?: "unknown"}", t)
                 setupTimeout?.cancel(false)
                 val detail = response?.let {
                     val body = runCatching { it.peekBody(4_096).string() }.getOrNull().orEmpty()
@@ -234,7 +246,13 @@ class GeminiLiveSession(
                 stopAudio()
             }
 
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w(logTag, "websocket_closing code=$code reason=${reason.take(500)} setupComplete=${setupComplete.get()}")
+                super.onClosing(webSocket, code, reason)
+            }
+
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w(logTag, "websocket_closed code=$code reason=${reason.take(500)} setupComplete=${setupComplete.get()}")
                 setupTimeout?.cancel(false)
                 stopAudio()
                 if (!setupComplete.get() && !closed.get()) {
