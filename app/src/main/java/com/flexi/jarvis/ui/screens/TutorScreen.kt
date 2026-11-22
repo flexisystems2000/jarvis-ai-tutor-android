@@ -752,6 +752,8 @@ fun TutorScreen(
                     notice!!.startsWith("Recording") ||
                     notice!!.startsWith("Uploading") ||
                     notice!!.startsWith("Transcription added") ||
+                    notice!!.startsWith("JARVIS is checking") ||
+                    notice!!.startsWith("JARVIS is generating") ||
                     notice!!.startsWith("Photo or video selected") ||
                     notice!!.startsWith("Photo captured") ||
                     notice!!.startsWith("File selected")
