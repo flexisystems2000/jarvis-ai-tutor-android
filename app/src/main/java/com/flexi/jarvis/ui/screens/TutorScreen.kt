@@ -62,6 +62,7 @@ fun TutorScreen(
     userId: String?,
     conversationRepository: ConversationRepository,
     speechTranscriptionApi: SpeechTranscriptionApi,
+    aiTutorApi: com.flexi.jarvis.network.AiTutorApi,
     selectedConversationId: String?,
     onConversationOpened: (String) -> Unit,
     onNewConversation: () -> Unit,
@@ -328,20 +329,14 @@ fun TutorScreen(
         }
     }
 
-    // SEND MESSAGE
+    // SEND MESSAGE: persist the user's turn, call the tutor, then persist JARVIS's reply.
     fun sendMessage() {
         val cleanPrompt = prompt.trim()
         val owner = userId
 
-        if (
-            cleanPrompt.isEmpty() ||
-            sending ||
-            recording ||
-            transcribing
-        ) return
-
+        if (cleanPrompt.isEmpty() || sending || recording || transcribing) return
         if (owner.isNullOrBlank()) {
-            notice = "Sign in to save conversations to your account."
+            notice = "Sign in to use JARVIS and save conversations to your account."
             return
         }
 
@@ -349,45 +344,59 @@ fun TutorScreen(
             sending = true
             notice = null
 
-            runCatching {
+            var activeConversationId: String? = null
+            try {
                 val ownedConversation = selectedConversationId?.let { id ->
-                    conversationRepository.list(owner)
-                        .firstOrNull { it.id == id }
+                    conversationRepository.list(owner).firstOrNull { it.id == id }
                 }
 
                 val conversationId = ownedConversation?.id
-                    ?: conversationRepository.create(
-                        owner,
-                        cleanPrompt.take(70)
-                    ).id.also(onConversationOpened)
+                    ?: conversationRepository.create(owner, cleanPrompt.take(70)).id.also(onConversationOpened)
+                activeConversationId = conversationId
+
+                // Save the user message first so it is not lost if the AI service is temporarily unavailable.
+                conversationRepository.addMessage(owner, conversationId, "user", cleanPrompt)
+                prompt = ""
+
+                val priorTurns = messages.map {
+                    com.flexi.jarvis.network.TutorTurn(it.role, it.content)
+                } + com.flexi.jarvis.network.TutorTurn("user", cleanPrompt)
+
+                val reply = aiTutorApi.ask(
+                    com.flexi.jarvis.network.TutorRequest(
+                        conversationId = conversationId,
+                        message = cleanPrompt,
+                        tutorName = tutorName,
+                        languageCode = languageCode,
+                        webSearch = webSearch,
+                        history = priorTurns
+                    )
+                ).getOrThrow()
 
                 conversationRepository.addMessage(
                     owner,
                     conversationId,
-                    "user",
-                    cleanPrompt
+                    "assistant",
+                    reply.text,
+                    reply.citations
                 )
 
-                conversationRepository.messages(
-                    owner,
-                    conversationId
-                )
-
-            }.onSuccess { updatedMessages ->
-                messages = updatedMessages
-                prompt = ""
-                onUsage()
-
-                if (selectedMedia != null) {
-                    notice = "Your text was saved. The selected attachment still needs upload support."
+                messages = conversationRepository.messages(owner, conversationId)
+                selectedMedia?.let {
+                    notice = "Text response received. The selected attachment still needs upload support."
                 }
-
-            }.onFailure { error ->
-                notice = error.message
-                    ?: "Your message could not be saved. Please try again."
+                selectedMedia = null
+                onUsage()
+            } catch (error: Exception) {
+                if (activeConversationId != null) {
+                    runCatching {
+                        messages = conversationRepository.messages(owner, activeConversationId)
+                    }
+                }
+                notice = error.message ?: "JARVIS could not respond. Your message may already be saved; please try again."
+            } finally {
+                sending = false
             }
-
-            sending = false
         }
     }
 
@@ -634,7 +643,7 @@ fun TutorScreen(
 
         if (messages.isNotEmpty() && !loading) {
             Text(
-                "Your message is saved. AI responses will appear when the tutor service is connected.",
+                "Your conversations are saved to your account.",
                 color = colors.onSurfaceVariant,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(vertical = 5.dp)
