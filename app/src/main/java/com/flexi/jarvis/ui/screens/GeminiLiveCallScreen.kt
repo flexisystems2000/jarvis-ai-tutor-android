@@ -2,6 +2,14 @@ package com.flexi.jarvis.ui.screens
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjectionManager
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.LifecycleOwner
+import com.flexi.jarvis.live.LiveCameraPublisher
+import com.flexi.jarvis.live.ScreenShareFrameBus
+import com.flexi.jarvis.live.JarvisScreenShareService
 import android.content.pm.PackageManager
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -108,6 +116,10 @@ fun GeminiLiveCallScreen(
     var showVolume by remember { mutableStateOf(false) }
     var callEnded by remember { mutableStateOf(false) }
     var aiEndCallHandled by remember { mutableStateOf(false) }
+    var cameraEnabled by remember { mutableStateOf(false) }
+    var screenSharing by remember { mutableStateOf(false) }
+    var cameraPublisher by remember { mutableStateOf<LiveCameraPublisher?>(null) }
+    val previewView = remember(context) { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
 
     // Short native call tones: a WhatsApp-style outgoing ringback on connect,
     // followed by a brief disconnect tone whenever the call ends (manual or AI).
@@ -170,6 +182,13 @@ fun GeminiLiveCallScreen(
         if (callEnded) return
         callEnded = true
         playCallTone(ToneGenerator.TONE_PROP_PROMPT, 220L)
+        cameraPublisher?.stop()
+        cameraPublisher = null
+        cameraEnabled = false
+        if (screenSharing) context.startService(Intent(context, JarvisScreenShareService::class.java).setAction(JarvisScreenShareService.ACTION_STOP))
+        screenSharing = false
+        ScreenShareFrameBus.onFrame = null
+        ScreenShareFrameBus.onStopped = null
         session?.close()
         session = null
         connected = false
@@ -259,6 +278,64 @@ fun GeminiLiveCallScreen(
                     error = it.message ?: "Could not start the Live call."
                     status = "Connection failed."
                 }
+        }
+    }
+
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) cameraEnabled = true else error = "Camera permission is required for video calls."
+    }
+
+    val screenSharePermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
+            ScreenShareFrameBus.onFrame = { frame -> session?.sendVideoFrame(frame) }
+            ScreenShareFrameBus.onStopped = {
+                mainHandler.post {
+                    screenSharing = false
+                    status = "Screen sharing stopped."
+                }
+            }
+            val serviceIntent = Intent(context, JarvisScreenShareService::class.java)
+                .putExtra(JarvisScreenShareService.EXTRA_RESULT_CODE, result.resultCode)
+                .putExtra(JarvisScreenShareService.EXTRA_RESULT_DATA, result.data)
+            ContextCompat.startForegroundService(context, serviceIntent)
+            screenSharing = true
+            status = "Sharing your screen with JARVIS."
+        } else {
+            error = "Screen sharing permission was not granted."
+        }
+    }
+
+    LaunchedEffect(cameraEnabled, connected) {
+        if (cameraEnabled && connected && cameraPublisher == null) {
+            val owner = context as? LifecycleOwner
+            if (owner == null) {
+                error = "Camera preview is unavailable in this activity."
+                cameraEnabled = false
+            } else {
+                val publisher = LiveCameraPublisher(
+                    context = context,
+                    lifecycleOwner = owner,
+                    previewView = previewView,
+                    onJpegFrame = { frame -> session?.sendVideoFrame(frame) },
+                    onError = { message -> mainHandler.post { error = message; cameraEnabled = false } }
+                )
+                cameraPublisher = publisher
+                publisher.start()
+            }
+        } else if ((!cameraEnabled || !connected) && cameraPublisher != null) {
+            cameraPublisher?.stop()
+            cameraPublisher = null
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            cameraPublisher?.stop()
+            ScreenShareFrameBus.onFrame = null
+            ScreenShareFrameBus.onStopped = null
+            if (screenSharing) {
+                context.startService(Intent(context, JarvisScreenShareService::class.java).setAction(JarvisScreenShareService.ACTION_STOP))
+            }
         }
     }
 
@@ -359,6 +436,15 @@ fun GeminiLiveCallScreen(
 
         Spacer(Modifier.height(18.dp))
         PurpleAudioWaveform(level = audioLevel, active = connected || connecting, modifier = Modifier.fillMaxWidth().height(76.dp))
+        if (cameraEnabled) {
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier.fillMaxWidth().height(190.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            )
+            TextButton(onClick = { cameraPublisher?.switchCamera() }) {
+                Text("Switch front / rear camera", color = Color(0xFFD8C5FF))
+            }
+        }
         Text(status, color = Color(0xFFB9AFC8), fontSize = 12.sp)
 
         Spacer(Modifier.height(20.dp))
@@ -401,6 +487,39 @@ fun GeminiLiveCallScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Icon(Icons.Default.VolumeUp, contentDescription = "Higher volume", tint = Color.White)
+            }
+        }
+
+        if (connected) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = {
+                    if (cameraEnabled) {
+                        cameraEnabled = false
+                        cameraPublisher?.stop()
+                        cameraPublisher = null
+                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        cameraEnabled = true
+                    } else cameraPermission.launch(Manifest.permission.CAMERA)
+                }) {
+                    Text(if (cameraEnabled) "Turn video off" else "Turn video on", color = Color.White)
+                }
+                TextButton(onClick = {
+                    if (screenSharing) {
+                        context.startService(Intent(context, JarvisScreenShareService::class.java).setAction(JarvisScreenShareService.ACTION_STOP))
+                        screenSharing = false
+                        ScreenShareFrameBus.onFrame = null
+                        status = "Screen sharing stopped."
+                    } else {
+                        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                        screenSharePermission.launch(manager.createScreenCaptureIntent())
+                    }
+                }) {
+                    Text(if (screenSharing) "Stop sharing" else "Share screen", color = Color.White)
+                }
             }
         }
 
