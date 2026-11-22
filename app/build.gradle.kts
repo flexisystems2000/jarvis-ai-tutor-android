@@ -139,6 +139,13 @@ dependencies {
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.auth)
     implementation(libs.ktor.client.android)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // CameraX for low-latency live video frames.
+    implementation("androidx.camera:camera-core:1.4.1")
+    implementation("androidx.camera:camera-camera2:1.4.1")
+    implementation("androidx.camera:camera-lifecycle:1.4.1")
+    implementation("androidx.camera:camera-view:1.4.1")
 
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)

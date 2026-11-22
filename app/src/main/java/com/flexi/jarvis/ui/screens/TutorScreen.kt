@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Psychology
@@ -69,6 +70,7 @@ fun TutorScreen(
     conversationRepository: ConversationRepository,
     speechTranscriptionApi: SpeechTranscriptionApi,
     aiTutorApi: com.flexi.jarvis.network.AiTutorApi,
+    geminiLiveTokenApi: com.flexi.jarvis.network.GeminiLiveTokenApi,
     selectedConversationId: String?,
     onConversationOpened: (String) -> Unit,
     onNewConversation: () -> Unit,
@@ -86,6 +88,7 @@ fun TutorScreen(
     var transcribing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var selectedMedia by remember { mutableStateOf<Uri?>(null) }
+    var liveCallOpen by remember { mutableStateOf(false) }
 
     var attachmentMenuExpanded by remember { mutableStateOf(false) }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -335,6 +338,26 @@ fun TutorScreen(
         }
     }
 
+    fun saveLiveTurn(userText: String, assistantText: String) {
+        val owner = userId ?: return
+        scope.launch {
+            runCatching {
+                val activeId = selectedConversationId
+                    ?: conversationRepository.create(owner, "JARVIS Live call").id.also(onConversationOpened)
+                if (userText.isNotBlank()) {
+                    conversationRepository.addMessage(owner, activeId, "user", userText)
+                }
+                if (assistantText.isNotBlank()) {
+                    conversationRepository.addMessage(owner, activeId, "assistant", assistantText)
+                }
+                messages = conversationRepository.messages(owner, activeId)
+                if (assistantText.isNotBlank()) onUsage()
+            }.onFailure {
+                notice = it.message ?: "Could not save the Live call transcript."
+            }
+        }
+    }
+
     // SEND MESSAGE: persist the user's turn, call the tutor, then persist JARVIS's reply.
     fun sendMessage() {
         val cleanPrompt = prompt.trim()
@@ -404,6 +427,17 @@ fun TutorScreen(
                 sending = false
             }
         }
+    }
+
+    if (liveCallOpen) {
+        GeminiLiveCallScreen(
+            tutorName = tutorName,
+            languageCode = languageCode,
+            tokenApi = geminiLiveTokenApi,
+            onCompletedTurn = ::saveLiveTurn,
+            onDismiss = { liveCallOpen = false }
+        )
+        return
     }
 
     Column(
@@ -857,13 +891,20 @@ fun TutorScreen(
                     }
                 }
 
-                // SEND
+                // COMPOSER ACTION: call when empty, send when the user has typed a message.
                 FilledIconButton(
-                    onClick = ::sendMessage,
-                    enabled = prompt.isNotBlank() &&
-                        !sending &&
-                        !recording &&
-                        !transcribing,
+                    onClick = {
+                        if (prompt.isBlank()) {
+                            if (userId.isNullOrBlank()) {
+                                notice = "Sign in before starting a JARVIS Live call."
+                            } else {
+                                liveCallOpen = true
+                            }
+                        } else {
+                            sendMessage()
+                        }
+                    },
+                    enabled = !sending && !recording && !transcribing,
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = colors.primary,
                         contentColor = colors.onPrimary
@@ -874,6 +915,11 @@ fun TutorScreen(
                             Modifier.size(18.dp),
                             color = colors.onPrimary,
                             strokeWidth = 2.dp
+                        )
+                    } else if (prompt.isBlank()) {
+                        Icon(
+                            Icons.Default.Call,
+                            contentDescription = "Start JARVIS Live call"
                         )
                     } else {
                         Icon(
