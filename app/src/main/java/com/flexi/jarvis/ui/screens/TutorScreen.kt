@@ -69,6 +69,7 @@ fun TutorScreen(
     conversationRepository: ConversationRepository,
     speechTranscriptionApi: SpeechTranscriptionApi,
     aiTutorApi: com.flexi.jarvis.network.AiTutorApi,
+    geminiLiveTokenApi: com.flexi.jarvis.network.GeminiLiveTokenApi,
     selectedConversationId: String?,
     onConversationOpened: (String) -> Unit,
     onNewConversation: () -> Unit,
@@ -86,6 +87,7 @@ fun TutorScreen(
     var transcribing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var selectedMedia by remember { mutableStateOf<Uri?>(null) }
+    var liveCallOpen by remember { mutableStateOf(false) }
 
     var attachmentMenuExpanded by remember { mutableStateOf(false) }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -335,6 +337,26 @@ fun TutorScreen(
         }
     }
 
+    fun saveLiveTurn(userText: String, assistantText: String) {
+        val owner = userId ?: return
+        scope.launch {
+            runCatching {
+                val activeId = selectedConversationId
+                    ?: conversationRepository.create(owner, "JARVIS Live call").id.also(onConversationOpened)
+                if (userText.isNotBlank()) {
+                    conversationRepository.addMessage(owner, activeId, "user", userText)
+                }
+                if (assistantText.isNotBlank()) {
+                    conversationRepository.addMessage(owner, activeId, "assistant", assistantText)
+                }
+                messages = conversationRepository.messages(owner, activeId)
+                if (assistantText.isNotBlank()) onUsage()
+            }.onFailure {
+                notice = it.message ?: "Could not save the Live call transcript."
+            }
+        }
+    }
+
     // SEND MESSAGE: persist the user's turn, call the tutor, then persist JARVIS's reply.
     fun sendMessage() {
         val cleanPrompt = prompt.trim()
@@ -452,6 +474,35 @@ fun TutorScreen(
                     modifier = Modifier.padding(11.dp)
                 )
             }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            FilledTonalButton(
+                onClick = {
+                    if (userId.isNullOrBlank()) {
+                        notice = "Sign in before starting a JARVIS Live call."
+                    } else {
+                        liveCallOpen = true
+                    }
+                }
+            ) {
+                Icon(Icons.Default.Call, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text("Live voice call")
+            }
+        }
+
+        if (liveCallOpen) {
+            GeminiLiveCallDialog(
+                tutorName = tutorName,
+                languageCode = languageCode,
+                tokenApi = geminiLiveTokenApi,
+                onCompletedTurn = ::saveLiveTurn,
+                onDismiss = { liveCallOpen = false }
+            )
         }
 
         Spacer(Modifier.height(16.dp))
