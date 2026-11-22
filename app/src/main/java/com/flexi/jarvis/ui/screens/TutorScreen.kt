@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mikepenz.markdown.m3.Markdown
 import androidx.core.content.ContextCompat
 import com.flexi.jarvis.data.model.ChatMessage
 import com.flexi.jarvis.data.repository.ConversationRepository
@@ -611,10 +612,9 @@ fun TutorScreen(
 
                                 Spacer(Modifier.height(5.dp))
 
-                                Text(
-                                    message.content,
-                                    color = colors.onSurface,
-                                    fontSize = 14.sp
+                                Markdown(
+                                    content = message.content,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
