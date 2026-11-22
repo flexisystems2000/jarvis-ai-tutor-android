@@ -119,7 +119,7 @@ fun GeminiLiveCallScreen(
     var jarvisTurn by remember { mutableStateOf("") }
     var audioLevel by remember { mutableFloatStateOf(0f) }
     var outputDevice by remember { mutableStateOf("Phone speaker") }
-    var volume by remember { mutableFloatStateOf(currentVolume) }
+    var volume by remember { mutableFloatStateOf(1f) }
     var showVolume by remember { mutableStateOf(false) }
     var callEnded by remember { mutableStateOf(false) }
     var aiEndCallHandled by remember { mutableStateOf(false) }
