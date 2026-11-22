@@ -103,6 +103,12 @@ class JarvisScreenShareService : Service() {
                     image.close()
                 }
             }, handler)
+            projection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    stopCapture()
+                    stopSelf()
+                }
+            }, handler)
             display = projection!!.createVirtualDisplay(
                 "JARVIS Screen Share",
                 width,
@@ -113,12 +119,6 @@ class JarvisScreenShareService : Service() {
                 null,
                 handler
             )
-            projection?.registerCallback(object : MediaProjection.Callback() {
-                override fun onStop() {
-                    stopCapture()
-                    stopSelf()
-                }
-            }, handler)
         } catch (_: Exception) {
             ScreenShareFrameBus.onStopped?.invoke()
             stopCapture()
