@@ -33,6 +33,7 @@ class GeminiLiveSession(
         fun onConnected() {}
         fun onInputTranscript(text: String) {}
         fun onOutputTranscript(text: String) {}
+        fun onAudioLevel(level: Float) {}
         fun onTurnComplete() {}
         fun onInterrupted() {}
         fun onError(message: String) {}
@@ -156,6 +157,7 @@ class GeminiLiveSession(
                 while (recording.get() && !closed.get()) {
                     val count = audioRecord.read(buffer, 0, buffer.size)
                     if (count > 0) {
+                        listener.onAudioLevel(pcmLevel(buffer, count))
                         val frame = Base64.encodeToString(buffer.copyOf(count), Base64.NO_WRAP)
                         val message = JSONObject().put("realtimeInput", JSONObject().put(
                             "audio", JSONObject().put("mimeType", "audio/pcm;rate=16000").put("data", frame)
@@ -226,11 +228,29 @@ class GeminiLiveSession(
                     track = output
                 }
                 if (playing.compareAndSet(false, true)) output.play()
+                listener.onAudioLevel(pcmLevel(bytes, bytes.size))
                 output.write(bytes, 0, bytes.size)
             } catch (error: Exception) {
                 listener.onError("Audio playback error: ${error.message ?: "unknown error"}")
             }
         }
+    }
+
+    private fun pcmLevel(bytes: ByteArray, length: Int): Float {
+        if (length < 2) return 0f
+        var sum = 0.0
+        var samples = 0
+        var index = 0
+        while (index + 1 < length) {
+            val sample = ((bytes[index + 1].toInt() shl 8) or (bytes[index].toInt() and 0xFF)).toShort().toInt()
+            val normalized = sample / 32768.0
+            sum += normalized * normalized
+            samples++
+            index += 2
+        }
+        if (samples == 0) return 0f
+        val rms = kotlin.math.sqrt(sum / samples).toFloat()
+        return (rms * 4.5f).coerceIn(0f, 1f)
     }
 
     private fun stopPlayback() {
