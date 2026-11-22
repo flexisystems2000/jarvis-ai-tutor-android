@@ -463,44 +463,50 @@ fun GeminiLiveCallScreen(
         }
 
         if (!cameraEnabled) {
-        Spacer(Modifier.height(18.dp))
-        Box(
-            modifier = Modifier
-                .size(196.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        listOf(JarvisPurple.copy(alpha = 0.35f), JarvisViolet.copy(alpha = 0.14f), Color.Transparent)
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
+            Spacer(Modifier.height(10.dp))
             Box(
-                Modifier
-                    .size((142 * pulse).dp)
+                modifier = Modifier
+                    .size(150.dp)
                     .clip(CircleShape)
                     .background(
                         Brush.radialGradient(
-                            listOf(Color(0xFFDCB8FF), JarvisPurple, JarvisViolet, Color(0xFF211039))
+                            listOf(JarvisPurple.copy(alpha = 0.35f), JarvisViolet.copy(alpha = 0.14f), Color.Transparent)
                         )
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Surface(
-                    modifier = Modifier.size(76.dp),
-                    shape = CircleShape,
-                    color = Color(0xFF160D27),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.22f))
+                Box(
+                    Modifier
+                        .size((112 * pulse).dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                listOf(Color(0xFFDCB8FF), JarvisPurple, JarvisViolet, Color(0xFF211039))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("J", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Bold)
+                    Surface(
+                        modifier = Modifier.size(68.dp),
+                        shape = CircleShape,
+                        color = Color(0xFF160D27),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.22f))
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("J", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
+        } else {
+            Spacer(Modifier.height(8.dp))
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier.fillMaxWidth().height(178.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            )
         }
 
-        Spacer(Modifier.height(16.dp))
-        Text(tutorName, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
+        Text(tutorName, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         Text(
             when {
                 connecting -> "Connecting..."
@@ -510,40 +516,37 @@ fun GeminiLiveCallScreen(
                 else -> "Voice conversation"
             },
             color = Color(0xFFC9B7E8),
-            fontSize = 14.sp
+            fontSize = 13.sp
         )
+        PurpleAudioWaveform(
+            level = audioLevel,
+            active = connected || connecting,
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+        )
+        Text(status, color = Color(0xFFB9AFC8), fontSize = 11.sp)
 
-        Spacer(Modifier.height(18.dp))
-        PurpleAudioWaveform(level = audioLevel, active = connected || connecting, modifier = Modifier.fillMaxWidth().height(76.dp))
-        }
-        if (cameraEnabled) {
-            AndroidView(
-                factory = { previewView },
-                modifier = Modifier.fillMaxWidth().weight(1f).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-            )
-        }
-        Text(status, color = Color(0xFFB9AFC8), fontSize = 12.sp)
-
-        if (!cameraEnabled) {
-        Spacer(Modifier.height(20.dp))
         Card(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).height(112.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.055f))
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Text("LIVE TRANSCRIPT", color = JarvisPurple, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                 Text(
                     userTurn.ifBlank { "Your words will appear here..." },
                     color = Color.White.copy(alpha = if (userTurn.isBlank()) 0.4f else 0.95f),
-                    fontSize = 14.sp
+                    fontSize = 12.sp,
+                    maxLines = 2
                 )
                 Text(
                     jarvisTurn.ifBlank { "JARVIS's response will appear here..." },
                     color = Color(0xFFD8C5FF).copy(alpha = if (jarvisTurn.isBlank()) 0.4f else 1f),
-                    fontSize = 14.sp
+                    fontSize = 12.sp,
+                    maxLines = 2
                 )
             }
-        }
         }
 
         error?.let {
@@ -589,7 +592,17 @@ fun GeminiLiveCallScreen(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        if (cameraEnabled) {
+            TextButton(
+                onClick = { cameraPublisher?.switchCamera() },
+                enabled = connected,
+                modifier = Modifier.padding(top = 0.dp, bottom = 2.dp)
+            ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFFD8C5FF))
+                Text("  Flip camera", color = Color(0xFFD8C5FF), fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -677,16 +690,6 @@ fun GeminiLiveCallScreen(
             ) { Text("Start voice call") }
         } else if (connecting) {
             Text("Securing your connection...", color = Color(0xFFC9B7E8), fontSize = 12.sp)
-        }
-        if (cameraEnabled) {
-            TextButton(
-                onClick = { cameraPublisher?.switchCamera() },
-                enabled = connected,
-                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
-            ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFFD8C5FF))
-                Text("  Flip camera", color = Color(0xFFD8C5FF), fontWeight = FontWeight.SemiBold)
-            }
         }
         Spacer(Modifier.height(10.dp))
     }
