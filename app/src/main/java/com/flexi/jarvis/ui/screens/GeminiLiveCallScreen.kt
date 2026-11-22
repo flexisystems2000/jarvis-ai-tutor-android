@@ -42,6 +42,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Mic
@@ -490,39 +492,6 @@ fun GeminiLiveCallScreen(
             }
         }
 
-        if (connected) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = {
-                    if (cameraEnabled) {
-                        cameraEnabled = false
-                        cameraPublisher?.stop()
-                        cameraPublisher = null
-                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                        cameraEnabled = true
-                    } else cameraPermission.launch(Manifest.permission.CAMERA)
-                }) {
-                    Text(if (cameraEnabled) "Turn video off" else "Turn video on", color = Color.White)
-                }
-                TextButton(onClick = {
-                    if (screenSharing) {
-                        context.startService(Intent(context, JarvisScreenShareService::class.java).setAction(JarvisScreenShareService.ACTION_STOP))
-                        screenSharing = false
-                        ScreenShareFrameBus.onFrame = null
-                        status = "Screen sharing stopped."
-                    } else {
-                        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                        screenSharePermission.launch(manager.createScreenCaptureIntent())
-                    }
-                }) {
-                    Text(if (screenSharing) "Stop sharing" else "Share screen", color = Color.White)
-                }
-            }
-        }
-
         Spacer(Modifier.height(16.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -539,6 +508,34 @@ fun GeminiLiveCallScreen(
                     contentDescription = "Output volume: $outputDevice",
                     tint = Color.White
                 )
+            }
+            Surface(shape = CircleShape, color = if (cameraEnabled) JarvisPurple else Color(0xFF302044)) {
+                IconButton(onClick = {
+                    if (cameraEnabled) {
+                        cameraEnabled = false
+                        cameraPublisher?.stop()
+                        cameraPublisher = null
+                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        cameraEnabled = true
+                    } else cameraPermission.launch(Manifest.permission.CAMERA)
+                }) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = if (cameraEnabled) "Turn video off" else "Turn video on", tint = Color.White)
+                }
+            }
+            Surface(shape = CircleShape, color = if (screenSharing) JarvisPurple else Color(0xFF302044)) {
+                IconButton(onClick = {
+                    if (screenSharing) {
+                        context.startService(Intent(context, JarvisScreenShareService::class.java).setAction(JarvisScreenShareService.ACTION_STOP))
+                        screenSharing = false
+                        ScreenShareFrameBus.onFrame = null
+                        status = "Screen sharing stopped."
+                    } else {
+                        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                        screenSharePermission.launch(manager.createScreenCaptureIntent())
+                    }
+                }) {
+                    Icon(Icons.Default.ScreenShare, contentDescription = if (screenSharing) "Stop screen sharing" else "Share screen", tint = Color.White)
+                }
             }
             Surface(shape = CircleShape, color = if (muted) Color(0xFF5A2630) else Color(0xFF302044)) {
                 IconButton(onClick = {
