@@ -34,6 +34,7 @@ import com.flexi.jarvis.data.repository.CloudPreferencesRepository
 import com.flexi.jarvis.network.SpeechTranscriptionApi
 import com.flexi.jarvis.network.CloudflareAiTutorApi
 import com.flexi.jarvis.network.GeminiLiveTokenApi
+import com.flexi.jarvis.network.GeminiTtsApi
 import com.flexi.jarvis.network.SupabaseBackendApi
 import com.flexi.jarvis.data.repository.SupabaseAccountRepository
 import com.flexi.jarvis.ui.screens.AccountScreen
@@ -100,6 +101,15 @@ fun JarvisApp() {
     // Gemini text chat is proxied through the same authenticated Cloudflare Worker.
     val aiTutorApi = remember {
         CloudflareAiTutorApi(
+            baseUrl = BuildConfig.SPEECH_API_URL,
+            accessTokenProvider = {
+                JarvisApplication.supabase.auth.currentAccessTokenOrNull()
+            }
+        )
+    }
+
+    val geminiTtsApi = remember {
+        GeminiTtsApi(
             baseUrl = BuildConfig.SPEECH_API_URL,
             accessTokenProvider = {
                 JarvisApplication.supabase.auth.currentAccessTokenOrNull()
@@ -563,6 +573,7 @@ fun JarvisApp() {
                             conversationRepository = conversationRepository,
                             speechTranscriptionApi = speechTranscriptionApi,
                             aiTutorApi = aiTutorApi,
+                            ttsApi = geminiTtsApi,
                             geminiLiveTokenApi = geminiLiveTokenApi,
                             selectedConversationId = selectedConversationId,
                             onConversationOpened = {

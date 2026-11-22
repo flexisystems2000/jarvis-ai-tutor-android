@@ -70,6 +70,7 @@ fun TutorScreen(
     conversationRepository: ConversationRepository,
     speechTranscriptionApi: SpeechTranscriptionApi,
     aiTutorApi: com.flexi.jarvis.network.AiTutorApi,
+    ttsApi: com.flexi.jarvis.network.GeminiTtsApi,
     geminiLiveTokenApi: com.flexi.jarvis.network.GeminiLiveTokenApi,
     selectedConversationId: String?,
     onConversationOpened: (String) -> Unit,
@@ -89,6 +90,11 @@ fun TutorScreen(
     var notice by remember { mutableStateOf<String?>(null) }
     var selectedMedia by remember { mutableStateOf<Uri?>(null) }
     var liveCallOpen by remember { mutableStateOf(false) }
+    var liveConversationId by remember(userId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(selectedConversationId) {
+        if (selectedConversationId != null) liveConversationId = selectedConversationId
+    }
 
     var attachmentMenuExpanded by remember { mutableStateOf(false) }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -343,7 +349,12 @@ fun TutorScreen(
         scope.launch {
             runCatching {
                 val activeId = selectedConversationId
-                    ?: conversationRepository.create(owner, "JARVIS Live call").id.also(onConversationOpened)
+                    ?: liveConversationId
+                    ?: conversationRepository.create(owner, "JARVIS voice call").id.also {
+                        liveConversationId = it
+                        onConversationOpened(it)
+                    }
+                liveConversationId = activeId
                 if (userText.isNotBlank()) {
                     conversationRepository.addMessage(owner, activeId, "user", userText)
                 }
@@ -430,10 +441,17 @@ fun TutorScreen(
     }
 
     if (liveCallOpen) {
-        GeminiLiveCallScreen(
+        VoiceCallScreen(
             tutorName = tutorName,
             languageCode = languageCode,
-            tokenApi = geminiLiveTokenApi,
+            webSearch = webSearch,
+            initialHistory = messages.map {
+                com.flexi.jarvis.network.TutorTurn(it.role, it.content)
+            },
+            speechApi = speechTranscriptionApi,
+            aiTutorApi = aiTutorApi,
+            ttsApi = ttsApi,
+            visionApi = geminiLiveTokenApi,
             onCompletedTurn = ::saveLiveTurn,
             onDismiss = { liveCallOpen = false }
         )
@@ -466,6 +484,7 @@ fun TutorScreen(
 
             IconButton(onClick = {
                 if (recording) stopRecordingAndTranscribe()
+                liveConversationId = null
                 onNewConversation()
             }) {
                 Icon(
@@ -896,7 +915,7 @@ fun TutorScreen(
                     onClick = {
                         if (prompt.isBlank()) {
                             if (userId.isNullOrBlank()) {
-                                notice = "Sign in before starting a JARVIS Live call."
+                                notice = "Sign in before starting a JARVIS voice call."
                             } else {
                                 liveCallOpen = true
                             }
@@ -919,7 +938,7 @@ fun TutorScreen(
                     } else if (prompt.isBlank()) {
                         Icon(
                             Icons.Default.Call,
-                            contentDescription = "Start JARVIS Live call"
+                            contentDescription = "Start JARVIS voice call"
                         )
                     } else {
                         Icon(
