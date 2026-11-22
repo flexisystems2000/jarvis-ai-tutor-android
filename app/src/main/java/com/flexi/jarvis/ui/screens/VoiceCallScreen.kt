@@ -71,7 +71,7 @@ import com.flexi.jarvis.live.JarvisScreenShareService
 import com.flexi.jarvis.live.LiveCameraPublisher
 import com.flexi.jarvis.live.ScreenShareFrameBus
 import com.flexi.jarvis.network.AiTutorApi
-import com.flexi.jarvis.network.GeminiLiveTokenApi
+import com.flexi.jarvis.network.CloudflareVisionApi
 import com.flexi.jarvis.network.GeminiTtsApi
 import com.flexi.jarvis.network.SpeechTranscriptionApi
 import com.flexi.jarvis.network.TutorRequest
@@ -111,7 +111,7 @@ fun VoiceCallScreen(
     speechApi: SpeechTranscriptionApi,
     aiTutorApi: AiTutorApi,
     ttsApi: GeminiTtsApi,
-    visionApi: GeminiLiveTokenApi,
+    visionApi: CloudflareVisionApi,
     onCompletedTurn: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
