@@ -34,6 +34,7 @@ class GeminiLiveSession(
         fun onInputTranscript(text: String) {}
         fun onOutputTranscript(text: String) {}
         fun onAudioLevel(level: Float) {}
+        fun onEndCallRequested(reason: String) {}
         fun onTurnComplete() {}
         fun onInterrupted() {}
         fun onError(message: String) {}
@@ -72,6 +73,16 @@ class GeminiLiveSession(
                                 JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))
                         .put("inputAudioTranscription", JSONObject())
                         .put("outputAudioTranscription", JSONObject())
+                        .put("tools", org.json.JSONArray().put(JSONObject().put(
+                            "functionDeclarations", org.json.JSONArray().put(JSONObject()
+                                .put("name", "end_call")
+                                .put("description", "End the current JARVIS voice call only when the user clearly intends to finish or disconnect the conversation. Do not call this merely because the user mentions ending a call hypothetically or as part of another topic.")
+                                .put("parameters", JSONObject()
+                                    .put("type", "OBJECT")
+                                    .put("properties", JSONObject().put("reason", JSONObject()
+                                        .put("type", "STRING")
+                                        .put("description", "Brief explanation of why the user wants to end the call.")))
+                                    .put("required", org.json.JSONArray().put("reason"))))))
                         .put("sessionResumption", JSONObject()))
                 webSocket.send(setup.toString())
             }
@@ -87,6 +98,28 @@ class GeminiLiveSession(
                         ?.optString("newHandle")
                         ?.takeIf { it.isNotBlank() }
                         ?.let(listener::onResumptionHandle)
+
+                    val toolCalls = root.optJSONObject("toolCall")?.optJSONArray("functionCalls")
+                    if (toolCalls != null) {
+                        for (index in 0 until toolCalls.length()) {
+                            val call = toolCalls.optJSONObject(index) ?: continue
+                            val name = call.optString("name")
+                            if (name == "end_call") {
+                                val callId = call.optString("id")
+                                val args = call.optJSONObject("args")
+                                val reason = args?.optString("reason").orEmpty().ifBlank { "The user asked to finish the conversation." }
+                                if (callId.isNotBlank()) {
+                                    webSocket.send(JSONObject().put("toolResponse", JSONObject().put(
+                                        "functionResponses", org.json.JSONArray().put(JSONObject()
+                                            .put("id", callId)
+                                            .put("name", "end_call")
+                                            .put("response", JSONObject().put("status", "ending").put("reason", reason)))
+                                    )).toString())
+                                }
+                                listener.onEndCallRequested(reason)
+                            }
+                        }
+                    }
 
                     val content = root.optJSONObject("serverContent") ?: return
                     content.optJSONObject("inputTranscription")?.optString("text")
