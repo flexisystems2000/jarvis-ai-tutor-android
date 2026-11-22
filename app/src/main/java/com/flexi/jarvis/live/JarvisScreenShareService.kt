@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import android.graphics.Bitmap
@@ -29,6 +30,7 @@ class JarvisScreenShareService : Service() {
     private var reader: ImageReader? = null
     private var thread: HandlerThread? = null
     private val stopping = AtomicBoolean(false)
+    @Volatile private var lastFrameAt = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -76,6 +78,9 @@ class JarvisScreenShareService : Service() {
             reader!!.setOnImageAvailableListener({ source ->
                 val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
                 try {
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastFrameAt < 800L) return@setOnImageAvailableListener
+                    lastFrameAt = now
                     val plane = image.planes[0]
                     val buffer = plane.buffer
                     val pixelStride = plane.pixelStride
