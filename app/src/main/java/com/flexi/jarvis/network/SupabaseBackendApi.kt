@@ -41,7 +41,7 @@ class SupabaseBackendApi(private val supabase: SupabaseClient) {
 
     suspend fun getMessages(userId: String, conversationId: String): JSONArray = request(
         method = "GET",
-        path = "/rest/v1/messages?select=id,conversation_id,user_id,role,content,citations,created_at" +
+        path = "/rest/v1/messages?select=id,conversation_id,user_id,role,content,citations,metadata,created_at" +
             "&user_id=eq.${enc(userId)}&conversation_id=eq.${enc(conversationId)}&order=created_at.asc"
     ) as JSONArray
 
@@ -50,15 +50,18 @@ class SupabaseBackendApi(private val supabase: SupabaseClient) {
         conversationId: String,
         role: String,
         content: String,
-        citations: List<String> = emptyList()
+        citations: List<String> = emptyList(),
+        imageUrl: String? = null
     ): JSONObject {
+        val metadata = JSONObject()
+        if (!imageUrl.isNullOrBlank()) metadata.put("image_url", imageUrl)
         val row = JSONObject()
             .put("user_id", userId)
             .put("conversation_id", conversationId)
             .put("role", role)
             .put("content", content)
             .put("citations", JSONArray(citations))
-            .put("metadata", JSONObject())
+            .put("metadata", metadata)
         val rows = request(
             method = "POST",
             path = "/rest/v1/messages?select=id,conversation_id,user_id,role,content,citations,created_at",
