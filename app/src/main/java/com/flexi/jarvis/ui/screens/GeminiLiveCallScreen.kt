@@ -462,6 +462,7 @@ fun GeminiLiveCallScreen(
             }
         }
 
+        if (!cameraEnabled) {
         Spacer(Modifier.height(18.dp))
         Box(
             modifier = Modifier
@@ -514,17 +515,19 @@ fun GeminiLiveCallScreen(
 
         Spacer(Modifier.height(18.dp))
         PurpleAudioWaveform(level = audioLevel, active = connected || connecting, modifier = Modifier.fillMaxWidth().height(76.dp))
+        }
         if (cameraEnabled) {
             AndroidView(
                 factory = { previewView },
-                modifier = Modifier.fillMaxWidth().height(190.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                modifier = Modifier.fillMaxWidth().weight(1f).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             )
         }
         Text(status, color = Color(0xFFB9AFC8), fontSize = 12.sp)
 
+        if (!cameraEnabled) {
         Spacer(Modifier.height(20.dp))
         Card(
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            modifier = Modifier.fillMaxWidth().weight(1f),
             colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.055f))
         ) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -540,6 +543,7 @@ fun GeminiLiveCallScreen(
                     fontSize = 14.sp
                 )
             }
+        }
         }
 
         error?.let {
@@ -674,14 +678,17 @@ fun GeminiLiveCallScreen(
         } else if (connecting) {
             Text("Securing your connection...", color = Color(0xFFC9B7E8), fontSize = 12.sp)
         }
-        Button(
-            onClick = { cameraPublisher?.switchCamera() },
-            enabled = cameraEnabled && connected,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
-        ) {
-            Text("Flip front / rear camera")
+        if (cameraEnabled) {
+            TextButton(
+                onClick = { cameraPublisher?.switchCamera() },
+                enabled = connected,
+                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+            ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFFD8C5FF))
+                Text("  Flip camera", color = Color(0xFFD8C5FF), fontWeight = FontWeight.SemiBold)
+            }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(10.dp))
     }
 }
 
