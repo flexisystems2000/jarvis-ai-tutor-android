@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Headphones
@@ -630,7 +631,7 @@ fun GeminiLiveCallScreen(
                     enabled = !cameraEnabled || connected
                 ) {
                     Icon(
-                        Icons.Default.CameraAlt,
+                        imageVector = if (cameraEnabled) Icons.Default.Cameraswitch else Icons.Default.CameraAlt,
                         contentDescription = if (cameraEnabled) "Flip camera" else "Turn video on",
                         tint = Color.White
                     )
