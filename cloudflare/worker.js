@@ -249,9 +249,18 @@ async function handleLive(request,env,user,log,json) {
     try { upstream.close(code,reason.slice(0,120)); } catch {}
     try { server.close(code,reason.slice(0,120)); } catch {}
   };
-  upstream.addEventListener("message",event=>{
+  upstream.addEventListener("message",async event=>{
     try {
-      const root=JSON.parse(typeof event.data==="string"?event.data:"");
+      let raw = "";
+      if (typeof event.data === "string") raw = event.data;
+      else if (event.data instanceof ArrayBuffer) raw = new TextDecoder().decode(event.data);
+      else if (ArrayBuffer.isView(event.data)) raw = new TextDecoder().decode(event.data);
+      else if (typeof Blob !== "undefined" && event.data instanceof Blob) raw = await event.data.text();
+      if (!raw || !raw.trim()) {
+        log("warn","live_provider_empty_frame",{requestId,dataType:typeof event.data});
+        return;
+      }
+      const root=JSON.parse(raw);
       if(root.error) {
         const detail=root.error.message||root.error.status||"Gemini rejected the Live session.";
         log("error","live_provider_session_error",{requestId,status:root.error.status||null,message:String(detail).slice(0,800)});
