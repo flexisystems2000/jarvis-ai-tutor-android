@@ -440,7 +440,7 @@ fun TutorScreen(
                     }.getOrNull()
 
                     val intent = route?.let(::parseImageIntent)
-                    if (intent?.first == true && intent.second.isNotBlank()) {
+                    if (intent != null && intent.first && intent.second.isNotBlank()) {
                         notice = "JARVIS is generating your image..."
                         runCatching {
                             imageGenerationApi.generate(intent.second).url
