@@ -107,15 +107,22 @@ class CloudflareAiTutorApi(
                 }
 
                 val json = JSONObject(raw)
-                val answer = json.optString("text").ifBlank {
-                    json.optString("response").ifBlank {
-                        json.optJSONArray("candidates")
-                            ?.optJSONObject(0)
-                            ?.optJSONObject("content")
-                            ?.optJSONArray("parts")
-                            ?.optJSONObject(0)
-                            ?.optString("text")
-                            .orEmpty()
+                // The Cloudflare /chat endpoint returns its generated answer in "reply".
+                // Keep the other formats for backward compatibility with older workers.
+                val answer = json.optString("reply").ifBlank {
+                    json.optString("text").ifBlank {
+                        json.optString("response").ifBlank {
+                            json.optJSONArray("candidates")
+                                ?.optJSONObject(0)
+                                ?.optJSONObject("content")
+                                ?.optJSONArray("parts")
+                                ?.let { parts ->
+                                    (0 until parts.length()).joinToString("") { index ->
+                                        parts.optJSONObject(index)?.optString("text").orEmpty()
+                                    }
+                                }
+                                .orEmpty()
+                        }
                     }
                 }.trim()
 
