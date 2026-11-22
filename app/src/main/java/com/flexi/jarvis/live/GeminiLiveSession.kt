@@ -44,6 +44,7 @@ class GeminiLiveSession(
         fun onError(message: String) {}
         fun onClosed() {}
         fun onResumptionHandle(handle: String) {}
+        fun onDiagnostic(message: String) {}
     }
 
     private val client = OkHttpClient.Builder()
@@ -68,6 +69,7 @@ class GeminiLiveSession(
 
     fun connect() {
         if (closed.get()) return
+        listener.onDiagnostic("Live transport: validating temporary token and model.")
         val wsVersion = token.apiVersion.ifBlank { "v1alpha" }
         if (wsVersion != "v1alpha") {
             listener.onError("Gemini Live temporary-token sessions require API version v1alpha (received $wsVersion).")
@@ -77,6 +79,7 @@ class GeminiLiveSession(
             listener.onError("The Live service returned an incomplete session configuration.")
             return
         }
+        listener.onDiagnostic("Live transport: opening Gemini WebSocket (API $wsVersion, model ${token.model}).")
         val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.$wsVersion.GenerativeService.BidiGenerateContentConstrained?access_token=" +
             java.net.URLEncoder.encode(token.token, "UTF-8")
         val request = try { Request.Builder().url(url).build() } catch (error: Exception) {
@@ -87,6 +90,7 @@ class GeminiLiveSession(
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(logTag, "websocket_open status=${response.code} protocol=${response.protocol} model=${token.model} apiVersion=${token.apiVersion}")
+                listener.onDiagnostic("WebSocket opened: HTTP ${response.code}, protocol ${response.protocol}.")
                 val endCallParameters = JSONObject()
                     .put("type", "OBJECT")
                     .put("properties", JSONObject().put(
@@ -150,6 +154,7 @@ class GeminiLiveSession(
                 }, 20, TimeUnit.SECONDS)
                 val setupSent = webSocket.send(setup.toString())
                 Log.i(logTag, "setup_send_accepted=$setupSent")
+                listener.onDiagnostic(if (setupSent) "Gemini setup frame queued successfully; waiting for setupComplete." else "Gemini setup frame could not be queued.")
                 if (!setupSent) {
                     setupTimeout?.cancel(false)
                     listener.onError("Could not send the Gemini Live session setup message.")
@@ -160,7 +165,9 @@ class GeminiLiveSession(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val root = JSONObject(text)
-                    Log.i(logTag, "server_message keys=${root.keys().asSequence().toList().joinToString(",")}")
+                    val messageKeys = root.keys().asSequence().toList().joinToString(",")
+                    Log.i(logTag, "server_message keys=$messageKeys")
+                    listener.onDiagnostic("Gemini message received: ${messageKeys.ifBlank { "empty message" }}.")
                     if (root.has("error")) {
                         val serverError = root.optJSONObject("error")
                         val message = serverError?.optString("message").orEmpty()
@@ -175,6 +182,7 @@ class GeminiLiveSession(
                         setupTimeout?.cancel(false)
                         if (setupComplete.compareAndSet(false, true)) {
                             Log.i(logTag, "setup_complete")
+                            listener.onDiagnostic("SUCCESS: Gemini sent setupComplete; Live session is ready.")
                             listener.onConnected()
                         }
                         return
@@ -238,21 +246,32 @@ class GeminiLiveSession(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(logTag, "websocket_failure httpStatus=${response?.code ?: -1} message=${t.message ?: "unknown"}", t)
                 setupTimeout?.cancel(false)
+                val causes = generateSequence(t as Throwable?) { it.cause }
+                    .take(5)
+                    .joinToString(" <- ") { cause ->
+                        val safeMessage = (cause.message ?: "no message")
+                            .replace(Regex("Address@[0-9a-fA-F]+"), "Address@[redacted]")
+                            .take(240)
+                        "${cause.javaClass.simpleName}: $safeMessage"
+                    }
                 val detail = response?.let {
                     val body = runCatching { it.peekBody(4_096).string() }.getOrNull().orEmpty()
-                    "HTTP ${it.code} ${it.message}${if (body.isNotBlank()) ": $body" else ""}"
-                } ?: (t.message ?: "network error")
+                    "HTTP ${it.code} ${it.message}${if (body.isNotBlank()) ": ${body.take(1200)}" else ""}"
+                } ?: causes.ifBlank { "Unknown network failure (${t.javaClass.simpleName})." }
+                listener.onDiagnostic("WebSocket failure: $detail")
                 listener.onError("Gemini Live WebSocket failed: $detail")
                 stopAudio()
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(logTag, "websocket_closing code=$code reason=${reason.take(500)} setupComplete=${setupComplete.get()}")
+                listener.onDiagnostic("WebSocket closing: code $code${if (reason.isNotBlank()) ", ${reason.take(240)}" else ""}; setupComplete=${setupComplete.get()}.")
                 super.onClosing(webSocket, code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(logTag, "websocket_closed code=$code reason=${reason.take(500)} setupComplete=${setupComplete.get()}")
+                listener.onDiagnostic("WebSocket closed: code $code${if (reason.isNotBlank()) ", ${reason.take(240)}" else ""}; setupComplete=${setupComplete.get()}.")
                 setupTimeout?.cancel(false)
                 stopAudio()
                 if (!setupComplete.get() && !closed.get()) {
@@ -263,7 +282,8 @@ class GeminiLiveSession(
         })
         } catch (error: Exception) {
             setupTimeout?.cancel(false)
-            listener.onError("Could not open Gemini Live WebSocket: ${error.message ?: "unknown error"}")
+            listener.onDiagnostic("WebSocket creation exception: ${error.javaClass.simpleName}: ${(error.message ?: "unknown").take(240)}")
+            listener.onError("Could not open Gemini Live WebSocket: ${error.javaClass.simpleName}: ${error.message ?: "unknown error"}")
         }
     }
 
