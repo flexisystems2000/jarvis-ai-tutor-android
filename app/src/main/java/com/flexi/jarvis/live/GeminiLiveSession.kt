@@ -91,61 +91,18 @@ class GeminiLiveSession(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(logTag, "websocket_open status=${response.code} protocol=${response.protocol} model=${token.model} apiVersion=${token.apiVersion}")
                 listener.onDiagnostic("WebSocket opened: HTTP ${response.code}, protocol ${response.protocol}.")
-                val endCallParameters = JSONObject()
-                    .put("type", "OBJECT")
-                    .put("properties", JSONObject().put(
-                        "reason",
-                        JSONObject()
-                            .put("type", "STRING")
-                            .put("description", "Brief explanation of why the user wants to end the call.")
-                    ))
-                    .put("required", org.json.JSONArray().put("reason"))
-
-                val endCallDeclaration = JSONObject()
-                    .put("name", "end_call")
-                    .put(
-                        "description",
-                        "End the current JARVIS voice call only when the user clearly intends to finish or disconnect the conversation. Do not call this merely because the user mentions ending a call hypothetically or as part of another topic."
-                    )
-                    .put("parameters", endCallParameters)
-
-                val functionDeclarations = org.json.JSONArray().put(endCallDeclaration)
-                val tools = org.json.JSONArray().put(
-                    JSONObject().put("functionDeclarations", functionDeclarations)
-                )
-
+                // Minimal protocol-isolation handshake: keep only the required model and
+                // AUDIO response modality. Optional setup fields are restored individually
+                // after setupComplete is confirmed.
                 val generationConfig = JSONObject()
                     .put("responseModalities", org.json.JSONArray().put("AUDIO"))
-                    .put(
-                        "speechConfig",
-                        JSONObject().put(
-                            "voiceConfig",
-                            JSONObject().put(
-                                "prebuiltVoiceConfig",
-                                JSONObject().put("voiceName", "Kore")
-                            )
-                        )
-                    )
-
-                val tutorName = token.tutorName.ifBlank { "JARVIS" }
-                val language = token.language.ifBlank { "English" }
-                val systemInstruction = "You are $tutorName, JARVIS AI Tutor for Flexi Digital Academy. This is a live natural voice conversation. Speak warmly and conversationally, keep most answers concise, allow the learner to interrupt, and teach accurately. Use camera or shared-screen frames only when they are actually provided. Speak in $language unless the learner asks for another language."
-                val systemInstructionContent = JSONObject().put(
-                    "parts",
-                    org.json.JSONArray().put(JSONObject().put("text", systemInstruction))
-                )
 
                 val setupBody = JSONObject()
                     .put("model", "models/${token.model}")
-                    .put("systemInstruction", systemInstructionContent)
                     .put("generationConfig", generationConfig)
-                    .put("inputAudioTranscription", JSONObject())
-                    .put("outputAudioTranscription", JSONObject())
-                    .put("tools", tools)
-                    .put("sessionResumption", JSONObject())
 
                 val setup = JSONObject().put("setup", setupBody)
-                Log.i(logTag, "setup_send model=models/${token.model} modalities=AUDIO tools=1 inputTranscription=true outputTranscription=true sessionResumption=true bytes=${setup.toString().toByteArray(Charsets.UTF_8).size}")
+                Log.i(logTag, "setup_send model=models/${token.model} modalities=AUDIO minimal=true bytes=${setup.toString().toByteArray(Charsets.UTF_8).size}")
                 setupTimeout = connectionTimer.schedule({
                     if (!setupComplete.get() && !closed.get()) {
                         listener.onError("Gemini connected, but did not complete session setup within 20 seconds. Check the Live model and setup configuration.")
