@@ -126,6 +126,7 @@ fun VoiceCallScreen(
     val active = remember { AtomicBoolean(false) }
     val mutedFlag = remember { AtomicBoolean(false) }
     val latestVision = remember { AtomicReference("") }
+    val voiceInputEpoch = remember { AtomicLong(0L) }
     val lastVisionAt = remember { AtomicLong(0L) }
     val audioTrackRef = remember { AtomicReference<AudioTrack?>(null) }
     val utterances = remember { Channel<File>(Channel.UNLIMITED) }
@@ -187,8 +188,9 @@ fun VoiceCallScreen(
         onDismiss()
     }
 
-    suspend fun playGeneratedSpeech(text: String) {
+    suspend fun playGeneratedSpeech(text: String, expectedEpoch: Long) {
         val generated = ttsApi.synthesize(text, TTS_VOICE_NAME)
+        if (!active.get() || voiceInputEpoch.get() != expectedEpoch) return
         withContext(Dispatchers.IO) {
             val format = AudioFormat.Builder()
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -255,6 +257,7 @@ fun VoiceCallScreen(
     }
 
     suspend fun processUtterance(file: File) {
+        val requestEpoch = voiceInputEpoch.get()
         try {
             val transcript = speechApi.transcribe(file).trim()
             if (transcript.isBlank() || !active.get()) return
@@ -280,10 +283,14 @@ fun VoiceCallScreen(
             history += TutorTurn("user", transcript)
             history += TutorTurn("assistant", reply.text)
             onCompletedTurn(transcript, reply.text)
+            if (voiceInputEpoch.get() != requestEpoch) {
+                status = "Listening — speak naturally."
+                return
+            }
             status = "JARVIS is speaking..."
             speaking = true
             try {
-                playGeneratedSpeech(reply.text)
+                playGeneratedSpeech(reply.text, requestEpoch)
             } finally {
                 speaking = false
             }
@@ -398,6 +405,7 @@ fun VoiceCallScreen(
                             writePcm16(segment, old, old.size)
                             speechSamples += old.size
                         }
+                        voiceInputEpoch.incrementAndGet()
                         stopPlayback()
                         withContext(Dispatchers.Main) {
                             speaking = false
