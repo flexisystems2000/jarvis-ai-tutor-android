@@ -70,6 +70,7 @@ fun TutorScreen(
     conversationRepository: ConversationRepository,
     speechTranscriptionApi: SpeechTranscriptionApi,
     aiTutorApi: com.flexi.jarvis.network.AiTutorApi,
+    ttsApi: com.flexi.jarvis.network.GeminiTtsApi,
     geminiLiveTokenApi: com.flexi.jarvis.network.GeminiLiveTokenApi,
     selectedConversationId: String?,
     onConversationOpened: (String) -> Unit,
@@ -430,10 +431,17 @@ fun TutorScreen(
     }
 
     if (liveCallOpen) {
-        GeminiLiveCallScreen(
+        VoiceCallScreen(
             tutorName = tutorName,
             languageCode = languageCode,
-            tokenApi = geminiLiveTokenApi,
+            webSearch = webSearch,
+            initialHistory = messages.map {
+                com.flexi.jarvis.network.TutorTurn(it.role, it.content)
+            },
+            speechApi = speechTranscriptionApi,
+            aiTutorApi = aiTutorApi,
+            ttsApi = ttsApi,
+            visionApi = geminiLiveTokenApi,
             onCompletedTurn = ::saveLiveTurn,
             onDismiss = { liveCallOpen = false }
         )
