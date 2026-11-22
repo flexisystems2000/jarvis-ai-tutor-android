@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.VolumeDown
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
@@ -108,11 +107,10 @@ fun GeminiLiveCallScreen(
 
     val previousAudioMode = remember { audioManager.mode }
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL).coerceAtLeast(1) }
-    val minVolume = remember { audioManager.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL) }
+    val minVolume = remember { if (android.os.Build.VERSION.SDK_INT >= 28) audioManager.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL) else 0 }
     val currentVolume = remember {
         audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL).toFloat() / maxVolume.toFloat()
     }
-    volume = currentVolume
 
     fun refreshAudioRoute() {
         val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
@@ -273,7 +271,7 @@ fun GeminiLiveCallScreen(
             when (outputDevice) {
                 "Bluetooth audio" -> Icon(Icons.Default.Bluetooth, contentDescription = outputDevice, tint = JarvisPurple)
                 "Wired earphones" -> Icon(Icons.Default.Headphones, contentDescription = outputDevice, tint = JarvisPurple)
-                else -> Icon(Icons.Default.PhoneInTalk, contentDescription = outputDevice, tint = JarvisPurple)
+                else -> Icon(Icons.Default.VolumeUp, contentDescription = outputDevice, tint = JarvisPurple)
             }
         }
 
