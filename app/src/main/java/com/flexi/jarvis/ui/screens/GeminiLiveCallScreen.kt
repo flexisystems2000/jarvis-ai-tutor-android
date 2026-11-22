@@ -109,11 +109,14 @@ fun GeminiLiveCallScreen(
     var callEnded by remember { mutableStateOf(false) }
     var aiEndCallHandled by remember { mutableStateOf(false) }
 
-    // Audible acknowledgement when the user opens the call screen from the composer.
-    LaunchedEffect(Unit) {
-        val tone = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80)
-        tone.startTone(ToneGenerator.TONE_PROP_ACK, 180)
-        mainHandler.postDelayed({ tone.release() }, 260L)
+    // Short native call tones: a WhatsApp-style outgoing ringback on connect,
+    // followed by a brief disconnect tone whenever the call ends (manual or AI).
+    fun playCallTone(toneType: Int, durationMs: Long) {
+        runCatching {
+            val tone = ToneGenerator(AudioManager.STREAM_RING, 78)
+            tone.startTone(toneType, durationMs.toInt())
+            mainHandler.postDelayed({ runCatching { tone.release() } }, durationMs + 120L)
+        }
     }
 
     val previousAudioMode = remember { audioManager.mode }
@@ -166,6 +169,7 @@ fun GeminiLiveCallScreen(
     fun endCall() {
         if (callEnded) return
         callEnded = true
+        playCallTone(ToneGenerator.TONE_PROP_PROMPT, 220L)
         session?.close()
         session = null
         connected = false
@@ -177,6 +181,7 @@ fun GeminiLiveCallScreen(
     fun beginCall() {
         if (connecting || connected || callEnded) return
         connecting = true
+        playCallTone(ToneGenerator.TONE_SUP_RINGTONE, 900L)
         error = null
         status = "Connecting securely to JARVIS..."
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
