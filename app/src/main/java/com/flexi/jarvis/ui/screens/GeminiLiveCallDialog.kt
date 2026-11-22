@@ -27,22 +27,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.flexi.jarvis.live.GeminiLiveSession
-import com.flexi.jarvis.network.GeminiLiveTokenApi
+import com.flexi.jarvis.live.LiveSessionClient
+import com.flexi.jarvis.network.LiveSessionApi
 import kotlinx.coroutines.launch
 
 @Composable
 fun GeminiLiveCallDialog(
     tutorName: String,
     languageCode: String,
-    tokenApi: GeminiLiveTokenApi,
+    liveApi: LiveSessionApi,
     onCompletedTurn: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
-    var session by remember { mutableStateOf<GeminiLiveSession?>(null) }
+    var session by remember { mutableStateOf<LiveSessionClient?>(null) }
     var connecting by remember { mutableStateOf(false) }
     var connected by remember { mutableStateOf(false) }
     var muted by remember { mutableStateOf(false) }
@@ -57,7 +57,7 @@ fun GeminiLiveCallDialog(
         error = null
         status = "Connecting securely to JARVIS..."
         scope.launch {
-            runCatching { tokenApi.create(tutorName, languageCode) }
+            runCatching { liveApi.create(tutorName, languageCode) }
                 .onSuccess { liveToken ->
                     val live = GeminiLiveSession(context, liveToken, object : GeminiLiveSession.Listener {
                         override fun onConnected() = mainHandler.post {
