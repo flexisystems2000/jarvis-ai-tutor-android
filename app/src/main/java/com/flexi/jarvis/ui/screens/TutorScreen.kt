@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Psychology
@@ -476,25 +477,6 @@ fun TutorScreen(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            FilledTonalButton(
-                onClick = {
-                    if (userId.isNullOrBlank()) {
-                        notice = "Sign in before starting a JARVIS Live call."
-                    } else {
-                        liveCallOpen = true
-                    }
-                }
-            ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                Spacer(Modifier.width(7.dp))
-                Text("Live voice call")
-            }
-        }
-
         if (liveCallOpen) {
             GeminiLiveCallDialog(
                 tutorName = tutorName,
@@ -908,13 +890,20 @@ fun TutorScreen(
                     }
                 }
 
-                // SEND
+                // COMPOSER ACTION: call when empty, send when the user has typed a message.
                 FilledIconButton(
-                    onClick = ::sendMessage,
-                    enabled = prompt.isNotBlank() &&
-                        !sending &&
-                        !recording &&
-                        !transcribing,
+                    onClick = {
+                        if (prompt.isBlank()) {
+                            if (userId.isNullOrBlank()) {
+                                notice = "Sign in before starting a JARVIS Live call."
+                            } else {
+                                liveCallOpen = true
+                            }
+                        } else {
+                            sendMessage()
+                        }
+                    },
+                    enabled = !sending && !recording && !transcribing,
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = colors.primary,
                         contentColor = colors.onPrimary
@@ -925,6 +914,11 @@ fun TutorScreen(
                             Modifier.size(18.dp),
                             color = colors.onPrimary,
                             strokeWidth = 2.dp
+                        )
+                    } else if (prompt.isBlank()) {
+                        Icon(
+                            Icons.Default.Call,
+                            contentDescription = "Start JARVIS Live call"
                         )
                     } else {
                         Icon(
