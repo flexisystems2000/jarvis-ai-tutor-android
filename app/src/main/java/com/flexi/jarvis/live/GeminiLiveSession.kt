@@ -59,7 +59,7 @@ class GeminiLiveSession(
 
     fun connect() {
         val wsVersion = token.apiVersion.ifBlank { "v1alpha" }
-        val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.$wsVersion.GenerativeService.BidiGenerateContent?key=" +
+        val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.$wsVersion.GenerativeService.BidiGenerateContentConstrained?access_token=" +
             java.net.URLEncoder.encode(token.token, "UTF-8")
         val request = Request.Builder().url(url).build()
         socket = client.newWebSocket(request, object : WebSocketListener() {
