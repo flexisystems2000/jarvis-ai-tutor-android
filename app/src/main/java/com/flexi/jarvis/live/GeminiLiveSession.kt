@@ -17,6 +17,8 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -43,11 +45,16 @@ class GeminiLiveSession(
     }
 
     private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .pingInterval(20, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
     private val executor = Executors.newSingleThreadExecutor()
     private val playbackExecutor = Executors.newSingleThreadExecutor()
+    private val connectionTimer: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+    @Volatile private var setupTimeout: ScheduledFuture<*>? = null
+    private val setupComplete = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private val recording = AtomicBoolean(false)
     private val playing = AtomicBoolean(false)
@@ -58,10 +65,23 @@ class GeminiLiveSession(
     private var noiseSuppressor: NoiseSuppressor? = null
 
     fun connect() {
+        if (closed.get()) return
         val wsVersion = token.apiVersion.ifBlank { "v1alpha" }
+        if (wsVersion != "v1alpha") {
+            listener.onError("Gemini Live temporary-token sessions require API version v1alpha (received $wsVersion).")
+            return
+        }
+        if (token.token.isBlank() || token.model.isBlank()) {
+            listener.onError("The Live service returned an incomplete session configuration.")
+            return
+        }
         val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.$wsVersion.GenerativeService.BidiGenerateContentConstrained?access_token=" +
             java.net.URLEncoder.encode(token.token, "UTF-8")
-        val request = Request.Builder().url(url).build()
+        val request = try { Request.Builder().url(url).build() } catch (error: Exception) {
+            listener.onError("Invalid Gemini Live connection URL: ${error.message ?: "invalid URL"}")
+            return
+        }
+        try {
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 val endCallParameters = JSONObject()
@@ -118,14 +138,34 @@ class GeminiLiveSession(
                     .put("sessionResumption", JSONObject())
 
                 val setup = JSONObject().put("setup", setupBody)
-                webSocket.send(setup.toString())
+                setupTimeout = connectionTimer.schedule({
+                    if (!setupComplete.get() && !closed.get()) {
+                        listener.onError("Gemini connected, but did not complete session setup within 20 seconds. Check the Live model and setup configuration.")
+                        webSocket.close(1001, "Gemini setup timeout")
+                    }
+                }, 20, TimeUnit.SECONDS)
+                if (!webSocket.send(setup.toString())) {
+                    setupTimeout?.cancel(false)
+                    listener.onError("Could not send the Gemini Live session setup message.")
+                    webSocket.close(1001, "Setup send failed")
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val root = JSONObject(text)
+                    if (root.has("error")) {
+                        val serverError = root.optJSONObject("error")
+                        val message = serverError?.optString("message").orEmpty()
+                        val status = serverError?.optString("status").orEmpty()
+                        setupTimeout?.cancel(false)
+                        listener.onError("Gemini Live rejected the session${if (status.isNotBlank()) " ($status)" else ""}: ${message.ifBlank { "unspecified server error" }}")
+                        webSocket.close(1008, "Gemini setup rejected")
+                        return
+                    }
                     if (root.has("setupComplete")) {
-                        listener.onConnected()
+                        setupTimeout?.cancel(false)
+                        if (setupComplete.compareAndSet(false, true)) listener.onConnected()
                         return
                     }
                     root.optJSONObject("sessionResumptionUpdate")
@@ -185,16 +225,28 @@ class GeminiLiveSession(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                listener.onError(response?.let { "Live connection failed (HTTP ${it.code})." }
-                    ?: "Live connection failed: ${t.message ?: "network error"}")
+                setupTimeout?.cancel(false)
+                val detail = response?.let {
+                    val body = runCatching { it.peekBody(4_096).string() }.getOrNull().orEmpty()
+                    "HTTP ${it.code} ${it.message}${if (body.isNotBlank()) ": $body" else ""}"
+                } ?: (t.message ?: "network error")
+                listener.onError("Gemini Live WebSocket failed: $detail")
                 stopAudio()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                setupTimeout?.cancel(false)
                 stopAudio()
+                if (!setupComplete.get() && !closed.get()) {
+                    listener.onError("Gemini closed the connection before setup completed (code $code${if (reason.isNotBlank()) ", $reason" else ""}).")
+                }
                 listener.onClosed()
             }
         })
+        } catch (error: Exception) {
+            setupTimeout?.cancel(false)
+            listener.onError("Could not open Gemini Live WebSocket: ${error.message ?: "unknown error"}")
+        }
     }
 
     fun startMicrophone() {
@@ -343,6 +395,8 @@ class GeminiLiveSession(
         recorder?.runCatching { stop() }
         track?.release()
         track = null
+        setupTimeout?.cancel(false)
+        connectionTimer.shutdownNow()
         executor.shutdownNow()
         playbackExecutor.shutdownNow()
         client.dispatcher.executorService.shutdown()
