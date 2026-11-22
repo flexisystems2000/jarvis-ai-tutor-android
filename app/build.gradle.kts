@@ -31,6 +31,13 @@ val escapedSpeechApiUrl = speechApiUrl
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
 
+val imageApiUrl = localProperties.getProperty("IMAGE_API_URL")
+    ?: System.getenv("IMAGE_API_URL")
+    ?: "https://jarvis-image-api.flexisystems2000.workers.dev"
+val escapedImageApiUrl = imageApiUrl
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 val releaseStoreFile = file("keystore/jarvis-release.jks")
 val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
@@ -75,6 +82,12 @@ android {
             "String",
             "SPEECH_API_URL",
             "\"$escapedSpeechApiUrl\""
+        )
+
+        buildConfigField(
+            "String",
+            "IMAGE_API_URL",
+            "\"$escapedImageApiUrl\""
         )
 
         buildConfigField(
