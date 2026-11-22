@@ -107,6 +107,7 @@ fun GeminiLiveCallScreen(
     var volume by remember { mutableFloatStateOf(1f) }
     var showVolume by remember { mutableStateOf(false) }
     var callEnded by remember { mutableStateOf(false) }
+    var aiEndCallHandled by remember { mutableStateOf(false) }
 
     // Audible acknowledgement when the user opens the call screen from the composer.
     LaunchedEffect(Unit) {
@@ -199,6 +200,8 @@ fun GeminiLiveCallScreen(
                         }
                         override fun onEndCallRequested(reason: String) {
                             mainHandler.post {
+                                if (aiEndCallHandled || callEnded) return@post
+                                aiEndCallHandled = true
                                 val finalUserText = userTurn.trim()
                                 val finalAssistantText = jarvisTurn.trim()
                                 if (finalUserText.isNotBlank() || finalAssistantText.isNotBlank()) {
