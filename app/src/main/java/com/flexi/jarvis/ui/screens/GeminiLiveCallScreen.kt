@@ -215,13 +215,13 @@ fun GeminiLiveCallScreen(
         connecting = true
         playCallTone(ToneGenerator.TONE_SUP_RINGTONE, 900L)
         error = null
-        diagnostics = listOf("Starting JARVIS Live connection.", "Requesting a short-lived Gemini Live token from the secure service.")
+        diagnostics = listOf("Starting JARVIS Live connection.", "Requesting a secure live session from Cloudflare.")
         status = "Connecting securely to JARVIS..."
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         refreshAudioRoute()
         scope.launch {
             runCatching { liveApi.create(tutorName, languageCode) }
-                .onSuccess { liveToken ->
+                .onSuccess { liveConfig ->
                     diagnostics = diagnostics + "Cloudflare connection configuration received; provider credentials remain server-side."
                     val live = LiveSessionClient(context, liveToken, object : LiveSessionClient.Listener {
                         override fun onDiagnostic(message: String) {
