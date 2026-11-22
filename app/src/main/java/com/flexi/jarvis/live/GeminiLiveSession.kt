@@ -99,6 +99,30 @@ class GeminiLiveSession(
                         ?.takeIf { it.isNotBlank() }
                         ?.let(listener::onResumptionHandle)
 
+                    val content = root.optJSONObject("serverContent")
+                    if (content != null) {
+                    content.optJSONObject("inputTranscription")?.optString("text")
+                        ?.takeIf { it.isNotBlank() }?.let(listener::onInputTranscript)
+                    content.optJSONObject("outputTranscription")?.optString("text")
+                        ?.takeIf { it.isNotBlank() }?.let(listener::onOutputTranscript)
+
+                    if (content.optBoolean("interrupted")) {
+                        stopPlayback()
+                        listener.onInterrupted()
+                    }
+
+                    val parts = content.optJSONObject("modelTurn")?.optJSONArray("parts")
+                    if (parts != null) {
+                        for (index in 0 until parts.length()) {
+                            val part = parts.optJSONObject(index) ?: continue
+                            val inline = part.optJSONObject("inlineData") ?: part.optJSONObject("inline_data")
+                            val encoded = inline?.optString("data").orEmpty()
+                            if (encoded.isNotBlank()) playPcm(Base64.decode(encoded, Base64.DEFAULT))
+                        }
+                    }
+                    if (content.optBoolean("turnComplete")) listener.onTurnComplete()
+                    }
+
                     val toolCalls = root.optJSONObject("toolCall")?.optJSONArray("functionCalls")
                     if (toolCalls != null) {
                         for (index in 0 until toolCalls.length()) {
@@ -121,27 +145,6 @@ class GeminiLiveSession(
                         }
                     }
 
-                    val content = root.optJSONObject("serverContent") ?: return
-                    content.optJSONObject("inputTranscription")?.optString("text")
-                        ?.takeIf { it.isNotBlank() }?.let(listener::onInputTranscript)
-                    content.optJSONObject("outputTranscription")?.optString("text")
-                        ?.takeIf { it.isNotBlank() }?.let(listener::onOutputTranscript)
-
-                    if (content.optBoolean("interrupted")) {
-                        stopPlayback()
-                        listener.onInterrupted()
-                    }
-
-                    val parts = content.optJSONObject("modelTurn")?.optJSONArray("parts")
-                    if (parts != null) {
-                        for (index in 0 until parts.length()) {
-                            val part = parts.optJSONObject(index) ?: continue
-                            val inline = part.optJSONObject("inlineData") ?: part.optJSONObject("inline_data")
-                            val encoded = inline?.optString("data").orEmpty()
-                            if (encoded.isNotBlank()) playPcm(Base64.decode(encoded, Base64.DEFAULT))
-                        }
-                    }
-                    if (content.optBoolean("turnComplete")) listener.onTurnComplete()
                 } catch (error: Exception) {
                     listener.onError("Could not read the Live response: ${error.message ?: "unknown error"}")
                 }
