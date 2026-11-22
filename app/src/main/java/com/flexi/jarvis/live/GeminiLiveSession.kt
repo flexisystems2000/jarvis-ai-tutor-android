@@ -64,26 +64,51 @@ class GeminiLiveSession(
         val request = Request.Builder().url(url).build()
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                val setup = JSONObject()
-                    .put("setup", JSONObject()
-                        .put("model", "models/${token.model}")
-                        .put("generationConfig", JSONObject()
-                            .put("responseModalities", org.json.JSONArray().put("AUDIO"))
-                            .put("speechConfig", JSONObject().put("voiceConfig",
-                                JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))
-                        .put("inputAudioTranscription", JSONObject())
-                        .put("outputAudioTranscription", JSONObject())
-                        .put("tools", org.json.JSONArray().put(JSONObject().put(
-                            "functionDeclarations", org.json.JSONArray().put(JSONObject()
-                                .put("name", "end_call")
-                                .put("description", "End the current JARVIS voice call only when the user clearly intends to finish or disconnect the conversation. Do not call this merely because the user mentions ending a call hypothetically or as part of another topic.")
-                                .put("parameters", JSONObject()
-                                    .put("type", "OBJECT")
-                                    .put("properties", JSONObject().put("reason", JSONObject()
-                                        .put("type", "STRING")
-                                        .put("description", "Brief explanation of why the user wants to end the call.")))
-                                    .put("required", org.json.JSONArray().put("reason"))))))
-                        .put("sessionResumption", JSONObject()))
+                val endCallParameters = JSONObject()
+                    .put("type", "OBJECT")
+                    .put("properties", JSONObject().put(
+                        "reason",
+                        JSONObject()
+                            .put("type", "STRING")
+                            .put("description", "Brief explanation of why the user wants to end the call.")
+                    ))
+                    .put("required", org.json.JSONArray().put("reason"))
+
+                val endCallDeclaration = JSONObject()
+                    .put("name", "end_call")
+                    .put(
+                        "description",
+                        "End the current JARVIS voice call only when the user clearly intends to finish or disconnect the conversation. Do not call this merely because the user mentions ending a call hypothetically or as part of another topic."
+                    )
+                    .put("parameters", endCallParameters)
+
+                val functionDeclarations = org.json.JSONArray().put(endCallDeclaration)
+                val tools = org.json.JSONArray().put(
+                    JSONObject().put("functionDeclarations", functionDeclarations)
+                )
+
+                val generationConfig = JSONObject()
+                    .put("responseModalities", org.json.JSONArray().put("AUDIO"))
+                    .put(
+                        "speechConfig",
+                        JSONObject().put(
+                            "voiceConfig",
+                            JSONObject().put(
+                                "prebuiltVoiceConfig",
+                                JSONObject().put("voiceName", "Kore")
+                            )
+                        )
+                    )
+
+                val setupBody = JSONObject()
+                    .put("model", "models/${token.model}")
+                    .put("generationConfig", generationConfig)
+                    .put("inputAudioTranscription", JSONObject())
+                    .put("outputAudioTranscription", JSONObject())
+                    .put("tools", tools)
+                    .put("sessionResumption", JSONObject())
+
+                val setup = JSONObject().put("setup", setupBody)
                 webSocket.send(setup.toString())
             }
 
