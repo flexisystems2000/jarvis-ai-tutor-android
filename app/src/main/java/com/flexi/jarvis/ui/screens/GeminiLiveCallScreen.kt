@@ -171,7 +171,7 @@ fun GeminiLiveCallScreen(
             AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_WIRED_HEADSET,
             AudioDeviceInfo.TYPE_USB_HEADSET -> "Wired earphones"
-            else -> "Phone speaker"
+            else -> "Phone earpiece"
         }
     }
 
@@ -223,8 +223,12 @@ fun GeminiLiveCallScreen(
         status = "Connecting securely to JARVIS..."
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         refreshAudioRoute()
-        val hasPrivateOutput = outputDevice == "Bluetooth audio" || outputDevice == "Wired earphones"
-        if (!hasPrivateOutput) audioManager.isSpeakerphoneOn = true
+        // Keep calls on the private earpiece by default. Loudspeaker playback can
+        // leak JARVIS audio back into AudioRecord and create a self-triggering
+        // listen/speak loop on devices with weak or unavailable echo cancellation.
+        // Android automatically selects connected Bluetooth or wired headsets.
+        audioManager.isSpeakerphoneOn = false
+        diagnostics = diagnostics + "Using private call audio routing to reduce speaker-to-microphone feedback."
         scope.launch {
             runCatching { liveApi.create(tutorName, languageCode) }
                 .onSuccess { liveConfig ->
