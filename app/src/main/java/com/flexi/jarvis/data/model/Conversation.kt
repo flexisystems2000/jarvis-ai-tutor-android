@@ -16,5 +16,6 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val citations: List<String> = emptyList(),
-    val createdAt: String
+    val createdAt: String,
+    val imageUrl: String? = null
 )
