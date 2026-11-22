@@ -100,8 +100,17 @@ class GeminiLiveSession(
                         )
                     )
 
+                val tutorName = token.tutorName.ifBlank { "JARVIS" }
+                val language = token.language.ifBlank { "English" }
+                val systemInstruction = "You are $tutorName, JARVIS AI Tutor for Flexi Digital Academy. This is a live natural voice conversation. Speak warmly and conversationally, keep most answers concise, allow the learner to interrupt, and teach accurately. Use camera or shared-screen frames only when they are actually provided. Speak in $language unless the learner asks for another language."
+                val systemInstructionContent = JSONObject().put(
+                    "parts",
+                    org.json.JSONArray().put(JSONObject().put("text", systemInstruction))
+                )
+
                 val setupBody = JSONObject()
                     .put("model", "models/${token.model}")
+                    .put("systemInstruction", systemInstructionContent)
                     .put("generationConfig", generationConfig)
                     .put("inputAudioTranscription", JSONObject())
                     .put("outputAudioTranscription", JSONObject())
