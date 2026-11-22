@@ -347,6 +347,7 @@ fun VoiceCallScreen(
             var inSpeech = false
             var silenceMs = 0
             var speechSamples = 0
+            var levelTicks = 0
             try {
                 recorder.startRecording()
                 while (isActive && active.get()) {
@@ -358,7 +359,11 @@ fun VoiceCallScreen(
                         sum += sample * sample
                     }
                     val rms = sqrt(sum / count).toFloat()
-                    withContext(Dispatchers.Main) { audioLevel = (rms / 12_000f).coerceIn(0f, 1f) }
+                    if (levelTicks++ % 5 == 0) {
+                        withContext(Dispatchers.Main) {
+                            audioLevel = (rms / 12_000f).coerceIn(0f, 1f)
+                        }
+                    }
 
                     if (mutedFlag.get()) {
                         if (inSpeech) {
