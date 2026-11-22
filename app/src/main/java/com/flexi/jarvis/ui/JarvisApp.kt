@@ -33,7 +33,7 @@ import com.flexi.jarvis.data.repository.ConversationRepository
 import com.flexi.jarvis.data.repository.CloudPreferencesRepository
 import com.flexi.jarvis.network.SpeechTranscriptionApi
 import com.flexi.jarvis.network.CloudflareAiTutorApi
-import com.flexi.jarvis.network.GeminiLiveTokenApi
+import com.flexi.jarvis.network.LiveSessionApi
 import com.flexi.jarvis.network.GeminiTtsApi
 import com.flexi.jarvis.network.SupabaseBackendApi
 import com.flexi.jarvis.data.repository.SupabaseAccountRepository
@@ -117,8 +117,8 @@ fun JarvisApp() {
         )
     }
 
-    val geminiLiveTokenApi = remember {
-        GeminiLiveTokenApi(
+    val liveSessionApi = remember {
+        LiveSessionApi(
             baseUrl = BuildConfig.SPEECH_API_URL,
             accessToken = {
                 JarvisApplication.supabase.auth.currentAccessTokenOrNull()
@@ -574,7 +574,7 @@ fun JarvisApp() {
                             speechTranscriptionApi = speechTranscriptionApi,
                             aiTutorApi = aiTutorApi,
                             ttsApi = geminiTtsApi,
-                            geminiLiveTokenApi = geminiLiveTokenApi,
+                            liveSessionApi = liveSessionApi,
                             selectedConversationId = selectedConversationId,
                             onConversationOpened = {
                                 selectedConversationId = it
