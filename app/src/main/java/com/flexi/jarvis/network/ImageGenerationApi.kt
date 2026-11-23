@@ -87,16 +87,12 @@ class ImageGenerationApi(
                 var popup: WebView? = null
                 var popupDialog: Dialog? = null
                 val dialog = Dialog(context)
-                val timeout = Runnable {
-                    finish(Result.failure(IOException(
-                        "Puter took too long to respond. Check your connection and try again."
-                    )))
-                }
+                var timeout: Runnable? = null
 
                 fun finish(result: Result<String>) {
                     handler.post {
                         if (!completed.compareAndSet(false, true)) return@post
-                        handler.removeCallbacks(timeout)
+                        timeout?.let { handler.removeCallbacks(it) }
                         runCatching { popupDialog?.dismiss() }
                         runCatching { popup?.stopLoading(); popup?.destroy() }
                         runCatching { webView.stopLoading() }
@@ -110,6 +106,12 @@ class ImageGenerationApi(
                             )
                         }
                     }
+                }
+
+                timeout = Runnable {
+                    finish(Result.failure(IOException(
+                        "Puter took too long to respond. Check your connection and try again."
+                    )))
                 }
 
                 class Bridge {
@@ -142,7 +144,7 @@ class ImageGenerationApi(
                 continuation.invokeOnCancellation {
                     handler.post {
                         if (completed.compareAndSet(false, true)) {
-                            handler.removeCallbacks(timeout)
+                            timeout?.let { handler.removeCallbacks(it) }
                             runCatching { popupDialog?.dismiss() }
                             runCatching { popup?.destroy() }
                             runCatching { dialog.dismiss() }
@@ -178,7 +180,7 @@ class ImageGenerationApi(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
-                handler.postDelayed(timeout, 5 * 60 * 1000L)
+                handler.postDelayed(timeout!!, 5 * 60 * 1000L)
                 onStatus("Please sign in to your Puter account to generate this image.")
 
                 webView.webChromeClient = object : WebChromeClient() {
