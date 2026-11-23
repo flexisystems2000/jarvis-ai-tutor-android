@@ -443,7 +443,9 @@ fun TutorScreen(
                     if (intent != null && intent.first && intent.second.isNotBlank()) {
                         notice = "JARVIS is generating your image..."
                         runCatching {
-                            val image = imageGenerationApi.generate(intent.second)
+                            val image = imageGenerationApi.generate(intent.second) { status ->
+                                notice = status
+                            }
                             conversationRepository.uploadGeneratedImage(
                                 owner,
                                 conversationId,

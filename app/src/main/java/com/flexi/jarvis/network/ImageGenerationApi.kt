@@ -42,11 +42,14 @@ class ImageGenerationApi(
     private val context: Context,
     private val baseUrl: String
 ) {
-    suspend fun generate(prompt: String): GeneratedImage {
+    suspend fun generate(
+        prompt: String,
+        onStatus: (String) -> Unit = {}
+    ): GeneratedImage {
         require(prompt.isNotBlank() && prompt.length <= 4000) {
             "Please provide a shorter image description."
         }
-        val source = generateSource(prompt)
+        val source = generateSource(prompt, onStatus)
         return withContext(Dispatchers.IO) { downloadImage(source) }
     }
 
@@ -64,8 +67,10 @@ class ImageGenerationApi(
         }
     }
 
-    private suspend fun generateSource(prompt: String): String =
-        withContext(Dispatchers.Main.immediate) {
+    private suspend fun generateSource(
+        prompt: String,
+        onStatus: (String) -> Unit
+    ): String = withContext(Dispatchers.Main.immediate) {
             suspendCancellableCoroutine { continuation ->
                 val handler = Handler(Looper.getMainLooper())
                 val completed = AtomicBoolean(false)
@@ -81,15 +86,23 @@ class ImageGenerationApi(
                 val webView = WebView(context)
                 var popup: WebView? = null
                 var popupDialog: Dialog? = null
+                val dialog = Dialog(context)
+                val timeout = Runnable {
+                    finish(Result.failure(IOException(
+                        "Puter took too long to respond. Check your connection and try again."
+                    )))
+                }
 
                 fun finish(result: Result<String>) {
                     handler.post {
                         if (!completed.compareAndSet(false, true)) return@post
+                        handler.removeCallbacks(timeout)
                         runCatching { popupDialog?.dismiss() }
                         runCatching { popup?.stopLoading(); popup?.destroy() }
                         runCatching { webView.stopLoading() }
                         runCatching { webView.removeJavascriptInterface("JarvisPuterBridge") }
                         runCatching { webView.destroy() }
+                        runCatching { dialog.dismiss() }
                         if (continuation.isActive) {
                             result.fold(
                                 onSuccess = { continuation.resume(it) },
@@ -110,6 +123,14 @@ class ImageGenerationApi(
                     }
 
                     @JavascriptInterface
+                    fun onStatus(message: String) {
+                        val safe = message.take(180)
+                        handler.post {
+                            if (!completed.get()) onStatus(safe)
+                        }
+                    }
+
+                    @JavascriptInterface
                     fun onImageError(message: String) {
                         val safeMessage = message.take(350).ifBlank {
                             "Puter could not generate this image. Please try again."
@@ -121,8 +142,10 @@ class ImageGenerationApi(
                 continuation.invokeOnCancellation {
                     handler.post {
                         if (completed.compareAndSet(false, true)) {
+                            handler.removeCallbacks(timeout)
                             runCatching { popupDialog?.dismiss() }
                             runCatching { popup?.destroy() }
+                            runCatching { dialog.dismiss() }
                             runCatching { webView.stopLoading(); webView.destroy() }
                         }
                     }
@@ -143,6 +166,20 @@ class ImageGenerationApi(
                 }
                 CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
                 webView.addJavascriptInterface(Bridge(), "JarvisPuterBridge")
+                dialog.setContentView(webView)
+                dialog.setCancelable(true)
+                dialog.setOnDismissListener {
+                    if (!completed.get()) {
+                        finish(Result.failure(IOException("Puter sign-in or image generation was cancelled.")))
+                    }
+                }
+                dialog.show()
+                dialog.window?.setLayout(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                handler.postDelayed(timeout, 5 * 60 * 1000L)
+                onStatus("Please sign in to your Puter account to generate this image.")
 
                 webView.webChromeClient = object : WebChromeClient() {
                     override fun onCreateWindow(
@@ -209,6 +246,18 @@ class ImageGenerationApi(
                                     IOException("Could not connect to Puter. Check your internet connection.")
                                 )
                             )
+                        }
+                    }
+
+                    override fun onReceivedHttpError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        errorResponse: android.webkit.WebResourceResponse?
+                    ) {
+                        if (request?.isForMainFrame == true) {
+                            finish(Result.failure(IOException(
+                                "Puter sign-in page returned HTTP ${errorResponse?.statusCode ?: "error"}. Please try again."
+                            )))
                         }
                     }
                 }

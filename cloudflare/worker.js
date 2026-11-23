@@ -23,30 +23,97 @@ export default {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>JARVIS Puter Image Bridge</title>
+  <meta name="color-scheme" content="light dark">
+  <title>JARVIS image generation</title>
   <script src="https://js.puter.com/v2/"></script>
+  <style>
+    body{font:16px system-ui,sans-serif;margin:0;padding:28px;min-height:100vh;box-sizing:border-box;display:grid;place-items:center;background:#101827;color:#f8fafc}
+    main{width:min(100%,460px);text-align:center}
+    h2{font-size:23px;margin:0 0 12px}
+    p{line-height:1.5;color:#cbd5e1}
+    button{width:100%;border:0;border-radius:14px;padding:16px;font-weight:700;font-size:16px;background:#2563eb;color:white;margin-top:18px}
+    button:disabled{opacity:.6}
+    #status{min-height:48px;margin-top:16px}
+  </style>
 </head>
 <body>
+<main>
+  <h2>Generate with your Puter account</h2>
+  <p>Sign in with your own Puter account. Image-generation usage belongs to your account, not a shared JARVIS account.</p>
+  <button id="start">Continue with Puter</button>
+  <p id="status">Tap Continue when you're ready.</p>
+</main>
 <script>
-  window.generateJarvisImage = async function(prompt) {
+(() => {
+  let prompt = "";
+  const button = document.getElementById("start");
+  const status = document.getElementById("status");
+  const tell = message => {
+    status.textContent = message;
+    try { window.JarvisPuterBridge.onStatus(message); } catch (_) {}
+  };
+  const withTimeout = (promise, ms, label) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(label + " timed out. Please try again.")), ms))
+  ]);
+  window.generateJarvisImage = value => {
+    prompt = String(value || "");
+    button.disabled = false;
+    button.textContent = "Continue with Puter";
+    tell("Tap Continue with Puter to sign in and start image generation.");
+  };
+  async function asDataUrl(image) {
+    const src = image && image.src;
+    if (!src) throw new Error("Puter returned an empty image.");
+    if (src.startsWith("data:") || src.startsWith("https://")) return src;
+    if (src.startsWith("blob:")) {
+      const blob = await fetch(src).then(response => {
+        if (!response.ok) throw new Error("Could not read the generated image.");
+        return response.blob();
+      });
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("Could not package the generated image."));
+        reader.readAsDataURL(blob);
+      });
+    }
+    throw new Error("Puter returned an unsupported image format.");
+  }
+  button.addEventListener("click", async () => {
+    if (!prompt || button.disabled) return;
+    button.disabled = true;
     try {
       let attempts = 0;
+      tell("Connecting to Puter...");
       while ((!window.puter || !puter.ai || !puter.auth) && attempts++ < 100) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      if (!window.puter) throw new Error("Puter could not be loaded. Check your internet connection.");
-      if (!puter.auth.isSignedIn()) await puter.auth.signIn();
-      const image = await puter.ai.txt2img(prompt, {
-        model: "gemini-3-pro-image",
-        quality: "2K"
-      });
-      if (!image || !image.src) throw new Error("Puter did not return an image.");
-      window.JarvisPuterBridge.onImageReady(image.src);
+      if (!window.puter || !puter.ai || !puter.auth) {
+        throw new Error("Puter could not load. Check your internet connection and retry.");
+      }
+      if (!puter.auth.isSignedIn()) {
+        tell("Waiting for you to sign in to Puter...");
+        await withTimeout(puter.auth.signIn(), 120000, "Puter sign-in");
+      }
+      tell("Your Puter account is connected. Generating the image...");
+      const image = await withTimeout(
+        puter.ai.txt2img(prompt, {model:"gemini-3-pro-image",quality:"2K"}),
+        240000,
+        "Image generation"
+      );
+      tell("Image generated. Preparing it for your JARVIS chat...");
+      const source = await asDataUrl(image);
+      window.JarvisPuterBridge.onImageReady(source);
     } catch (error) {
-      const message = error && error.message ? error.message : String(error);
+      const message = error && (error.msg || error.message) ? (error.msg || error.message) : String(error);
       window.JarvisPuterBridge.onImageError(message);
+      tell(message);
+      button.disabled = false;
+      button.textContent = "Try again";
     }
-  };
+  });
+})();
 </script>
 </body>
 </html>`;
