@@ -27,28 +27,15 @@ export default {
   <title>JARVIS image generation</title>
   <script src="https://js.puter.com/v2/"></script>
   <style>
-    body{font:16px system-ui,sans-serif;margin:0;padding:28px;min-height:100vh;box-sizing:border-box;display:grid;place-items:center;background:#101827;color:#f8fafc}
+    body{font:16px system-ui,sans-serif;margin:0;padding:24px;min-height:100vh;box-sizing:border-box;display:grid;place-items:center;background:#101827;color:#f8fafc}
     main{width:min(100%,460px);text-align:center}
-    h2{font-size:23px;margin:0 0 12px}
-    p{line-height:1.5;color:#cbd5e1}
-    button{width:100%;border:0;border-radius:14px;padding:16px;font-weight:700;font-size:16px;background:#2563eb;color:white;margin-top:18px}
-    button:disabled{opacity:.6}
-    #status{min-height:48px;margin-top:16px}
+    #status{line-height:1.5;color:#cbd5e1}
   </style>
 </head>
 <body>
-<main>
-  <h2>Enable JARVIS image generation</h2>
-  <p>JARVIS cannot exchange your Google or email login for a Puter account. Continue to let Puter create a temporary personal account for image generation, or use an existing Puter account. Your JARVIS password and Google tokens are never sent to Puter.</p>
-  <button id="start">Set up automatically</button>
-  <button id="existing" style="background:#334155;margin-top:10px">I already have a Puter account</button>
-  <p id="status">This is a one-time setup for this device.</p>
-</main>
+<main><p id="status">JARVIS is preparing your image...</p></main>
 <script>
 (() => {
-  let prompt = "";
-  const button = document.getElementById("start");
-  const existingButton = document.getElementById("existing");
   const status = document.getElementById("status");
   let busy = false;
   const tell = message => {
@@ -59,13 +46,6 @@ export default {
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error(label + " timed out. Please try again.")), ms))
   ]);
-  window.generateJarvisImage = value => {
-    prompt = String(value || "");
-    button.disabled = false;
-    existingButton.disabled = false;
-    button.textContent = "Set up automatically";
-    tell("Choose automatic setup or use your existing Puter account.");
-  };
   async function asDataUrl(image) {
     const src = image && image.src;
     if (!src) throw new Error("Puter returned an empty image.");
@@ -84,48 +64,42 @@ export default {
     }
     throw new Error("Puter returned an unsupported image format.");
   }
-  async function startGeneration(createTemporaryAccount) {
-    if (!prompt || busy) return;
+  window.generateJarvisImage = async value => {
+    if (busy) return;
+    const prompt = String(value || "").trim();
+    if (!prompt) {
+      window.JarvisPuterBridge.onImageError("Please provide an image description.");
+      return;
+    }
     busy = true;
-    button.disabled = true;
-    existingButton.disabled = true;
     try {
       let attempts = 0;
-      tell("Connecting to Puter...");
-      while ((!window.puter || !puter.ai || !puter.auth) && attempts++ < 100) {
+      tell("Preparing your image...");
+      while ((!window.puter || !puter.ai) && attempts++ < 100) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      if (!window.puter || !puter.ai || !puter.auth) {
-        throw new Error("Puter could not load. Check your internet connection and retry.");
+      if (!window.puter || !puter.ai) {
+        throw new Error("Image generation service could not load. Check your internet connection and retry.");
       }
-      if (!puter.auth.isSignedIn()) {
-        tell(createTemporaryAccount
-          ? "Setting up your personal image-generation account..."
-          : "Opening Puter sign-in...");
-        const options = createTemporaryAccount ? {attempt_temp_user_creation:true} : {};
-        await withTimeout(puter.auth.signIn(options), 120000, "Puter account setup");
-      }
-      tell("Your Puter account is connected. Generating the image...");
+      tell("JARVIS is generating your image...");
+      // Puter.js automatically handles user authentication when its AI API is first used.
+      // No separate setup/sign-in screen and no JARVIS credentials are passed to Puter.
       const image = await withTimeout(
         puter.ai.txt2img(prompt, {model:"gemini-3-pro-image",quality:"2K"}),
         240000,
         "Image generation"
       );
-      tell("Image generated. Preparing it for your JARVIS chat...");
+      tell("Image generated. Adding it to your JARVIS chat...");
       const source = await asDataUrl(image);
       window.JarvisPuterBridge.onImageReady(source);
     } catch (error) {
       const message = error && (error.msg || error.message) ? (error.msg || error.message) : String(error);
       window.JarvisPuterBridge.onImageError(message);
       tell(message);
-      button.disabled = false;
-      existingButton.disabled = false;
-      button.textContent = "Try again";
+    } finally {
       busy = false;
     }
-  }
-  button.addEventListener("click", () => startGeneration(true));
-  existingButton.addEventListener("click", () => startGeneration(false));
+  };
 })();
 </script>
 </body>
