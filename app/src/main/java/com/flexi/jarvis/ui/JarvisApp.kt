@@ -109,12 +109,10 @@ fun JarvisApp() {
         )
     }
 
-    val imageGenerationApi = remember {
+    val imageGenerationApi = remember(context) {
         ImageGenerationApi(
-            baseUrl = BuildConfig.IMAGE_API_URL,
-            accessTokenProvider = {
-                JarvisApplication.supabase.auth.currentAccessTokenOrNull()
-            }
+            context = context,
+            baseUrl = BuildConfig.IMAGE_API_URL
         )
     }
 
@@ -691,6 +689,7 @@ fun JarvisApp() {
                                     accountMessage = null
 
                                     runCatching {
+                                        imageGenerationApi.signOut()
                                         accountRepository.signOut()
                                     }.onSuccess {
                                         account = null

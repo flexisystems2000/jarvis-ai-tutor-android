@@ -16,6 +16,51 @@ export default {
     if (request.method === "GET" && (path === "/" || path === "/health")) {
       return json({service:"JARVIS AI API",status:"online",speech:"available",geminiConfiguredKeys:keys(env).length,textModel:"gemini-2.5-flash",speechModel:"gemini-2.5-flash-preview-tts",voicePipeline:"Gemini Live native bidirectional audio",liveModel:"gemini-3.8-live"});
     }
+
+    if (request.method === "GET" && path === "/puter-image") {
+      const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JARVIS Puter Image Bridge</title>
+  <script src="https://js.puter.com/v2/"></script>
+</head>
+<body>
+<script>
+  window.generateJarvisImage = async function(prompt) {
+    try {
+      let attempts = 0;
+      while ((!window.puter || !puter.ai || !puter.auth) && attempts++ < 100) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      if (!window.puter) throw new Error("Puter could not be loaded. Check your internet connection.");
+      if (!puter.auth.isSignedIn()) await puter.auth.signIn();
+      const image = await puter.ai.txt2img(prompt, {
+        model: "gemini-3-pro-image",
+        quality: "2K"
+      });
+      if (!image || !image.src) throw new Error("Puter did not return an image.");
+      window.JarvisPuterBridge.onImageReady(image.src);
+    } catch (error) {
+      const message = error && error.message ? error.message : String(error);
+      window.JarvisPuterBridge.onImageError(message);
+    }
+  };
+</script>
+</body>
+</html>`;
+      return new Response(html, {
+        status: 200,
+        headers: {
+          ...cors,
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "no-referrer"
+        }
+      });
+    }
     if (!((request.method === "GET" && path === "/live") || (request.method === "POST" && ["/transcribe","/chat","/vision","/tts"].includes(path)))) return json({detail:"Not found."},404);
     try {
       const authorization = request.headers.get("Authorization");

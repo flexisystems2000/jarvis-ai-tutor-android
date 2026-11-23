@@ -408,7 +408,7 @@ fun TutorScreen(
 
                 // Gemini classifies likely visual requests; ordinary chat avoids a second
                 // routing call. The keyword gate only narrows candidates — Gemini decides intent.
-                var generatedImageUrl: String? = null
+                var generatedImagePath: String? = null
                 var imageFailure: String? = null
                 if (isPossibleImageRequest(cleanPrompt)) {
                     notice = "JARVIS is checking your image request..."
@@ -443,9 +443,15 @@ fun TutorScreen(
                     if (intent != null && intent.first && intent.second.isNotBlank()) {
                         notice = "JARVIS is generating your image..."
                         runCatching {
-                            imageGenerationApi.generate(intent.second).url
+                            val image = imageGenerationApi.generate(intent.second)
+                            conversationRepository.uploadGeneratedImage(
+                                owner,
+                                conversationId,
+                                image.bytes,
+                                image.mimeType
+                            )
                         }.onSuccess {
-                            generatedImageUrl = it
+                            generatedImagePath = it
                         }.onFailure {
                             imageFailure = it.message ?: "Image generation failed. Please try again."
                         }
@@ -469,7 +475,7 @@ fun TutorScreen(
                     "assistant",
                     reply.text,
                     reply.citations,
-                    generatedImageUrl
+                    generatedImagePath
                 )
 
                 messages = conversationRepository.messages(owner, conversationId)

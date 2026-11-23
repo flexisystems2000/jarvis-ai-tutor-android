@@ -12,6 +12,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Instant
+import java.util.UUID
 
 /** Authenticated REST access to the user's own Stage 3 Supabase rows. */
 class SupabaseBackendApi(private val supabase: SupabaseClient) {
@@ -51,10 +52,10 @@ class SupabaseBackendApi(private val supabase: SupabaseClient) {
         role: String,
         content: String,
         citations: List<String> = emptyList(),
-        imageUrl: String? = null
+        imagePath: String? = null
     ): JSONObject {
         val metadata = JSONObject()
-        if (!imageUrl.isNullOrBlank()) metadata.put("image_url", imageUrl)
+        if (!imagePath.isNullOrBlank()) metadata.put("image_path", imagePath)
         val row = JSONObject()
             .put("user_id", userId)
             .put("conversation_id", conversationId)
@@ -77,6 +78,71 @@ class SupabaseBackendApi(private val supabase: SupabaseClient) {
             prefer = "return=minimal"
         )
         return saved
+    }
+
+
+    suspend fun uploadGeneratedImage(
+        userId: String,
+        conversationId: String,
+        bytes: ByteArray,
+        mimeType: String
+    ): String {
+        require(userId.isNotBlank() && conversationId.isNotBlank()) {
+            "A signed-in user and conversation are required to save this image."
+        }
+        require(bytes.isNotEmpty() && bytes.size <= 25 * 1024 * 1024) {
+            "The generated image is empty or too large to save."
+        }
+        val extension = when (mimeType.substringBefore(';').lowercase()) {
+            "image/jpeg", "image/jpg" -> "jpg"
+            "image/webp" -> "webp"
+            else -> "png"
+        }
+        val objectPath = "$userId/conversations/$conversationId/images/${UUID.randomUUID()}.$extension"
+        val encodedPath = objectPath.split("/").joinToString("/") { enc(it) }
+        return withContext(Dispatchers.IO) {
+            val connection = (URL("$baseUrl/storage/v1/object/user-files/$encodedPath")
+                .openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 20_000
+                readTimeout = 60_000
+                doOutput = true
+                setRequestProperty("apikey", BuildConfig.SUPABASE_PUBLISHABLE_KEY)
+                setRequestProperty("Authorization", "Bearer ${accessToken()}")
+                setRequestProperty("Content-Type", mimeType.substringBefore(';'))
+                setRequestProperty("x-upsert", "false")
+            }
+            try {
+                connection.outputStream.use { it.write(bytes) }
+                val status = connection.responseCode
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (status !in 200..299) {
+                    val detail = runCatching { JSONObject(response).optString("message") }
+                        .getOrNull()?.takeIf { it.isNotBlank() } ?: response.take(250)
+                    throw IllegalStateException("Image could not be saved to your conversation (HTTP $status): $detail")
+                }
+                objectPath
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+    suspend fun createSignedImageUrl(userId: String, objectPath: String): String {
+        require(objectPath.startsWith("$userId/")) {
+            "This image does not belong to the signed-in user."
+        }
+        val encodedPath = objectPath.split("/").joinToString("/") { enc(it) }
+        val response = request(
+            method = "POST",
+            path = "/storage/v1/object/sign/user-files/$encodedPath",
+            body = JSONObject().put("expiresIn", 604800)
+        ) as? JSONObject ?: error("Supabase did not return an image link.")
+        val signedPath = response.optString("signedURL")
+        if (signedPath.isBlank()) error("Supabase did not return an image link.")
+        return if (signedPath.startsWith("https://")) signedPath
+        else "$baseUrl/storage/v1/${signedPath.trimStart('/')}"
     }
 
     suspend fun updateConversationTitle(userId: String, conversationId: String, title: String) {
