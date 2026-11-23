@@ -38,16 +38,19 @@ export default {
 </head>
 <body>
 <main>
-  <h2>Generate with your Puter account</h2>
-  <p>Sign in with your own Puter account. Image-generation usage belongs to your account, not a shared JARVIS account.</p>
-  <button id="start">Continue with Puter</button>
-  <p id="status">Tap Continue when you're ready.</p>
+  <h2>Enable JARVIS image generation</h2>
+  <p>JARVIS cannot exchange your Google or email login for a Puter account. Continue to let Puter create a temporary personal account for image generation, or use an existing Puter account. Your JARVIS password and Google tokens are never sent to Puter.</p>
+  <button id="start">Set up automatically</button>
+  <button id="existing" style="background:#334155;margin-top:10px">I already have a Puter account</button>
+  <p id="status">This is a one-time setup for this device.</p>
 </main>
 <script>
 (() => {
   let prompt = "";
   const button = document.getElementById("start");
+  const existingButton = document.getElementById("existing");
   const status = document.getElementById("status");
+  let busy = false;
   const tell = message => {
     status.textContent = message;
     try { window.JarvisPuterBridge.onStatus(message); } catch (_) {}
@@ -59,8 +62,9 @@ export default {
   window.generateJarvisImage = value => {
     prompt = String(value || "");
     button.disabled = false;
-    button.textContent = "Continue with Puter";
-    tell("Tap Continue with Puter to sign in and start image generation.");
+    existingButton.disabled = false;
+    button.textContent = "Set up automatically";
+    tell("Choose automatic setup or use your existing Puter account.");
   };
   async function asDataUrl(image) {
     const src = image && image.src;
@@ -80,9 +84,11 @@ export default {
     }
     throw new Error("Puter returned an unsupported image format.");
   }
-  button.addEventListener("click", async () => {
-    if (!prompt || button.disabled) return;
+  async function startGeneration(createTemporaryAccount) {
+    if (!prompt || busy) return;
+    busy = true;
     button.disabled = true;
+    existingButton.disabled = true;
     try {
       let attempts = 0;
       tell("Connecting to Puter...");
@@ -93,8 +99,11 @@ export default {
         throw new Error("Puter could not load. Check your internet connection and retry.");
       }
       if (!puter.auth.isSignedIn()) {
-        tell("Waiting for you to sign in to Puter...");
-        await withTimeout(puter.auth.signIn(), 120000, "Puter sign-in");
+        tell(createTemporaryAccount
+          ? "Setting up your personal image-generation account..."
+          : "Opening Puter sign-in...");
+        const options = createTemporaryAccount ? {attempt_temp_user_creation:true} : {};
+        await withTimeout(puter.auth.signIn(options), 120000, "Puter account setup");
       }
       tell("Your Puter account is connected. Generating the image...");
       const image = await withTimeout(
@@ -110,9 +119,13 @@ export default {
       window.JarvisPuterBridge.onImageError(message);
       tell(message);
       button.disabled = false;
+      existingButton.disabled = false;
       button.textContent = "Try again";
+      busy = false;
     }
-  });
+  }
+  button.addEventListener("click", () => startGeneration(true));
+  existingButton.addEventListener("click", () => startGeneration(false));
 })();
 </script>
 </body>
