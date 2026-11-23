@@ -33,7 +33,7 @@ val escapedSpeechApiUrl = speechApiUrl
 
 val imageApiUrl = localProperties.getProperty("IMAGE_API_URL")
     ?: System.getenv("IMAGE_API_URL")
-    ?: "https://jarvis-image-api.flexisystems2000.workers.dev"
+    ?: "https://jarvis-speech-api.flexisystems2000.workers.dev"
 val escapedImageApiUrl = imageApiUrl
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
