@@ -55,9 +55,13 @@ class ImageGenerationApi(
      * preventing the next JARVIS user on this device from inheriting it.
      */
     suspend fun signOut() = withContext(Dispatchers.Main.immediate) {
-        CookieManager.getInstance().removeAllCookies(null)
-        CookieManager.getInstance().flush()
-        WebStorage.getInstance().deleteAllData()
+        suspendCancellableCoroutine<Unit> { continuation ->
+            CookieManager.getInstance().removeAllCookies {
+                CookieManager.getInstance().flush()
+                WebStorage.getInstance().deleteAllData()
+                if (continuation.isActive) continuation.resume(Unit)
+            }
+        }
     }
 
     private suspend fun generateSource(prompt: String): String =
@@ -65,6 +69,7 @@ class ImageGenerationApi(
             suspendCancellableCoroutine { continuation ->
                 val handler = Handler(Looper.getMainLooper())
                 val completed = AtomicBoolean(false)
+                val started = AtomicBoolean(false)
                 val endpoint = baseUrl.trim().trimEnd('/')
                 if (!endpoint.startsWith("https://")) {
                     continuation.resumeWithException(
@@ -171,10 +176,10 @@ class ImageGenerationApi(
                             if (popup === authWindow) popup = null
                             if (popupDialog === dialog) popupDialog = null
                         }
-                        val transport = resultMsg?.obj as? WebView.WebViewTransport
-                            ?: return false
+                        val message = resultMsg ?: return false
+                        val transport = message.obj as? WebView.WebViewTransport ?: return false
                         transport.webView = authWindow
-                        resultMsg.sendToTarget()
+                        message.sendToTarget()
                         dialog.show()
                         dialog.window?.setLayout(
                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -186,9 +191,11 @@ class ImageGenerationApi(
 
                 webView.webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
-                        val script = "window.generateJarvisImage && window.generateJarvisImage(" +
-                            JSONObject.quote(prompt) + ");"
-                        view?.evaluateJavascript(script, null)
+                        if (started.compareAndSet(false, true)) {
+                            val script = "window.generateJarvisImage && window.generateJarvisImage(" +
+                                JSONObject.quote(prompt) + ");"
+                            view?.evaluateJavascript(script, null)
+                        }
                     }
 
                     override fun onReceivedError(

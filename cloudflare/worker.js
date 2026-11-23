@@ -61,13 +61,24 @@ export default {
         }
       });
     }
-    if (!((request.method === "GET" && path === "/live") || (request.method === "POST" && ["/transcribe","/chat","/vision","/tts"].includes(path)))) return json({detail:"Not found."},404);
+    if (!((request.method === "GET" && path === "/live") || (request.method === "POST" && ["/transcribe","/chat","/vision","/tts","/v1/images/generations"].includes(path)))) return json({detail:"Not found."},404);
     try {
       const authorization = request.headers.get("Authorization");
       if (!authorization?.startsWith("Bearer ") || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) { log("warn","authentication_configuration_missing"); return json({detail:"Authentication required.",requestId},401); }
       const auth = await fetch(String(env.SUPABASE_URL).replace(/\/+$/,"") + "/auth/v1/user", {headers:{apikey:env.SUPABASE_ANON_KEY,Authorization:authorization}});
       if (!auth.ok) { log("warn","supabase_auth_rejected",{status:auth.status}); return json({detail:"Your session is invalid. Please sign in again.",requestId},401); }
       const user = await auth.json();
+
+      // Keep the legacy image proxy available during the Puter migration.
+      if (path === "/v1/images/generations") {
+        if (!env.IMAGE_API) return json({detail:"Image generation routing is not configured.",requestId},503);
+        log("info","image_request_forwarded",{userId:user?.id || null});
+        return env.IMAGE_API.fetch(new Request("https://jarvis-image-api.internal/v1/images/generations",{
+          method:"POST",
+          headers:{Authorization:authorization,"Content-Type":request.headers.get("Content-Type") || "application/json",Accept:"application/json"},
+          body:request.body
+        }));
+      }
 
       if (path === "/live") return await handleLive(request,env,user,log,json);
 
